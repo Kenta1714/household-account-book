@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}PayPay取り込み - 家計簿{% endblock %}
+
+{% block content %}
+<h4 class="mb-4"><i class="bi bi-upload"></i> PayPay CSV 取り込み</h4>
+
+<div class="row g-4">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <h6 class="card-title">CSVアップロード</h6>
+        <p class="text-muted small">
+          PayPayアプリの「取引履歴」からエクスポートしたCSVファイルをアップロードしてください。<br>
+          重複する取引は自動的にスキップされます。
+        </p>
+        <form method="post" action="{{ url_for('paypay.upload') }}" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label class="form-label">CSVファイル</label>
+            <input type="file" name="csv_file" class="form-control" accept=".csv" required>
+          </div>
+          <div class="mb-3">
+            <div class="form-check">
+              <input type="checkbox" name="import_investment" value="1"
+                     class="form-check-input" id="importInvestment">
+              <label class="form-check-label" for="importInvestment">
+                投資（PayPayポイント運用）も取り込む
+              </label>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-upload"></i> 取り込む
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-transparent fw-bold">取り込み履歴</div>
+      {% if logs %}
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead class="table-light">
+            <tr><th>日時</th><th>検出</th><th>追加</th><th>スキップ</th></tr>
+          </thead>
+          <tbody>
+            {% for log in logs %}
+            <tr>
+              <td>{{ log.scanned_at.strftime('%Y/%m/%d %H:%M') }}</td>
+              <td>{{ log.total_found }}</td>
+              <td class="text-success fw-bold">{{ log.added }}</td>
+              <td class="text-muted">{{ log.skipped }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body text-muted">履歴なし</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

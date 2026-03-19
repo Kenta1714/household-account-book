@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ '編集' if tx else '追加' }} - 家計簿{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title mb-4">{{ '収支を編集' if tx else '収支を追加' }}</h5>
+        <form method="post">
+          <div class="mb-3">
+            <label class="form-label">種別</label>
+            <div class="btn-group w-100" role="group">
+              <input type="radio" class="btn-check" name="type" id="typeExpense" value="expense"
+                     {% if not tx or tx.type == 'expense' %}checked{% endif %}>
+              <label class="btn btn-outline-danger" for="typeExpense">支出</label>
+              <input type="radio" class="btn-check" name="type" id="typeIncome" value="income"
+                     {% if tx and tx.type == 'income' %}checked{% endif %}>
+              <label class="btn btn-outline-success" for="typeIncome">収入</label>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">日付</label>
+            <input type="date" name="date" class="form-control"
+                   value="{{ tx.date if tx else '' }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">金額（円）</label>
+            <input type="number" name="amount" class="form-control" min="1"
+                   value="{{ tx.amount if tx else '' }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">内容</label>
+            <input type="text" name="description" class="form-control"
+                   value="{{ tx.description if tx else '' }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">カテゴリ</label>
+            <select name="category_id" class="form-select">
+              <option value="">未分類</option>
+              {% for cat in categories %}
+                <option value="{{ cat.id }}"
+                  {% if tx and tx.category_id == cat.id %}selected{% endif %}>
+                  {{ cat.name }} ({{ '収入' if cat.type == 'income' else '支出' }})
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-4">
+            <label class="form-label">メモ（任意）</label>
+            <textarea name="memo" class="form-control" rows="2">{{ tx.memo if tx else '' }}</textarea>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">保存</button>
+            <a href="{{ url_for('transactions.index') }}" class="btn btn-outline-secondary">キャンセル</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

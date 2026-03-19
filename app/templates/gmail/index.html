@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Gmail連携 - 家計簿{% endblock %}
+
+{% block content %}
+<h4 class="mb-4"><i class="bi bi-envelope"></i> Gmail連携</h4>
+
+<!-- 認証状態 -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body d-flex justify-content-between align-items-center">
+    <div>
+      <strong>連携状態:</strong>
+      {% if authenticated %}
+        <span class="badge bg-success ms-1">接続済み</span>
+      {% else %}
+        <span class="badge bg-secondary ms-1">未接続</span>
+      {% endif %}
+    </div>
+    {% if not authenticated %}
+      <a href="{{ url_for('gmail.auth') }}" class="btn btn-primary btn-sm">
+        <i class="bi bi-google"></i> Googleアカウントで認証
+      </a>
+    {% else %}
+      <div class="d-flex gap-2">
+        <form method="post" action="{{ url_for('gmail.scan') }}">
+          <input type="hidden" name="batch" value="0">
+          <button type="submit" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-arrow-clockwise"></i> 今すぐスキャン（未読）
+          </button>
+        </form>
+        <form method="post" action="{{ url_for('gmail.scan') }}"
+              onsubmit="return confirm('過去のメールをすべてスキャンします。時間がかかる場合があります。続けますか？')">
+          <input type="hidden" name="batch" value="1">
+          <button type="submit" class="btn btn-outline-warning btn-sm">
+            <i class="bi bi-inbox"></i> 一括取り込み（全件）
+          </button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- フォーマット登録 -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-transparent fw-bold d-flex justify-content-between align-items-center">
+    メールフォーマット
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newFormatModal">
+      <i class="bi bi-plus-lg"></i> 追加
+    </button>
+  </div>
+  {% if formats %}
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>会社名</th>
+          <th>送信元</th>
+          <th>金額前テキスト</th>
+          <th>金額後テキスト</th>
+          <th>デフォルトカテゴリ</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fmt in formats %}
+        <tr>
+          <td>{{ fmt.company_name }}</td>
+          <td><small class="text-muted">{{ fmt.sender_email }}</small></td>
+          <td><code>{{ fmt.amount_prefix }}</code></td>
+          <td><code>{{ fmt.amount_suffix }}</code></td>
+          <td>{{ fmt.default_category.name if fmt.default_category else '-' }}</td>
+          <td>
+            <form method="post" action="{{ url_for('gmail.format_delete', fmt_id=fmt.id) }}"
+                  onsubmit="return confirm('削除しますか？')">
+              <button type="submit" class="btn btn-outline-danger btn-sm py-0">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-muted">フォーマットが登録されていません</div>
+  {% endif %}
+</div>
+
+<!-- スキャン履歴 -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-transparent fw-bold">スキャン履歴</div>
+  {% if logs %}
+  <div class="table-responsive">
+    <table class="table mb-0">
+      <thead class="table-light">
+        <tr><th>実行日時</th><th>検出</th><th>追加</th><th>スキップ</th></tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td>{{ log.scanned_at.strftime('%Y/%m/%d %H:%M') }}</td>
+          <td>{{ log.total_found }}</td>
+          <td class="text-success fw-bold">{{ log.added }}</td>
+          <td class="text-muted">{{ log.skipped }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-muted">履歴なし</div>
+  {% endif %}
+</div>
+
+<!-- フォーマット追加モーダル -->
+<div class="modal fade" id="newFormatModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('gmail.format_new') }}">
+        <div class="modal-header">
+          <h5 class="modal-title">メールフォーマット登録</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">会社名</label>
+              <input type="text" name="company_name" class="form-control" placeholder="例: 楽天カード" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">送信元メールアドレス</label>
+              <input type="text" name="sender_email" class="form-control" placeholder="例: info@rakuten-card.co.jp" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label">サンプルメール本文</label>
+              <textarea id="sampleText" name="sample_text" class="form-control font-monospace" rows="5"
+                        placeholder="カード会社から届いたメールの本文をここに貼り付けてください"></textarea>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">金額直前のテキスト</label>
+              <input type="text" id="prefixInput" name="amount_prefix" class="form-control"
+                     placeholder="例: ご利用金額：" required>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">金額直後のテキスト</label>
+              <input type="text" id="suffixInput" name="amount_suffix" class="form-control"
+                     placeholder="例: 円" required>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+              <button type="button" class="btn btn-outline-secondary w-100" id="previewBtn">
+                確認
+              </button>
+            </div>
+            <div class="col-12" id="previewResult" style="display:none">
+              <div class="alert mb-0" id="previewAlert"></div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">デフォルトカテゴリ（任意）</label>
+              <select name="default_category_id" class="form-select">
+                <option value="">未分類</option>
+                {% for cat in categories %}
+                  <option value="{{ cat.id }}">{{ cat.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">登録</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('previewBtn').addEventListener('click', async () => {
+  const body = document.getElementById('sampleText').value;
+  const prefix = document.getElementById('prefixInput').value;
+  const suffix = document.getElementById('suffixInput').value;
+
+  const res = await fetch('/gmail/formats/preview', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({body, prefix, suffix}),
+  });
+  const d = await res.json();
+  const el = document.getElementById('previewResult');
+  const alert = document.getElementById('previewAlert');
+  el.style.display = '';
+  if (d.success) {
+    alert.className = 'alert alert-success mb-0';
+    alert.textContent = `抽出成功: ¥${d.amount.toLocaleString()} (マッチ: "${d.matched}")`;
+  } else {
+    alert.className = 'alert alert-danger mb-0';
+    alert.textContent = '金額を抽出できませんでした。前後テキストを確認してください。';
+  }
+});
+</script>
+{% endblock %}

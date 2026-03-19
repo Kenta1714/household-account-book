@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}カテゴリ - 家計簿{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-tags"></i> カテゴリ管理</h4>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newCatModal">
+    <i class="bi bi-plus-lg"></i> 追加
+  </button>
+</div>
+
+<div class="row g-3">
+  {% for type_label, type_key in [('支出', 'expense'), ('収入', 'income')] %}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-transparent fw-bold">{{ type_label }}カテゴリ</div>
+      <ul class="list-group list-group-flush">
+        {% for cat in categories if cat.type == type_key %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <span>
+            <span class="badge me-2" style="background:{{ cat.color }}">&nbsp;</span>
+            {{ cat.name }}
+            {% if cat.is_default %}<small class="text-muted">(デフォルト)</small>{% endif %}
+          </span>
+          <div class="d-flex gap-1">
+            <button class="btn btn-outline-secondary btn-sm py-0"
+                    onclick="openEditModal({{ cat.id }}, '{{ cat.name }}', '{{ cat.type }}', '{{ cat.color }}')">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <form method="post" action="{{ url_for('categories.delete', cat_id=cat.id) }}"
+                  onsubmit="return confirm('削除しますか？')">
+              <button type="submit" class="btn btn-outline-danger btn-sm py-0">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </div>
+        </li>
+        {% else %}
+        <li class="list-group-item text-muted">なし</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- 新規追加モーダル -->
+<div class="modal fade" id="newCatModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('categories.new') }}">
+        <div class="modal-header">
+          <h5 class="modal-title">カテゴリ追加</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">名前</label>
+            <input type="text" name="name" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">種別</label>
+            <select name="type" class="form-select">
+              <option value="expense">支出</option>
+              <option value="income">収入</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">色</label>
+            <div class="d-flex flex-wrap gap-1">
+              {% for color in colors %}
+              <input type="radio" class="btn-check" name="color" id="nc_{{ color }}" value="{{ color }}">
+              <label class="btn btn-sm p-2" for="nc_{{ color }}"
+                     style="background:{{ color }};width:30px;height:30px;border-radius:50%;border:2px solid #fff"></label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary btn-sm">追加</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 編集モーダル -->
+<div class="modal fade" id="editCatModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <form method="post" id="editCatForm">
+        <div class="modal-header">
+          <h5 class="modal-title">カテゴリ編集</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">名前</label>
+            <input type="text" name="name" id="editCatName" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">種別</label>
+            <select name="type" id="editCatType" class="form-select">
+              <option value="expense">支出</option>
+              <option value="income">収入</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">色</label>
+            <div class="d-flex flex-wrap gap-1">
+              {% for color in colors %}
+              <input type="radio" class="btn-check" name="color" id="ec_{{ color }}" value="{{ color }}">
+              <label class="btn btn-sm p-2" for="ec_{{ color }}"
+                     style="background:{{ color }};width:30px;height:30px;border-radius:50%;border:2px solid #fff"></label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary btn-sm">更新</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openEditModal(id, name, type, color) {
+  document.getElementById('editCatForm').action = `/categories/${id}/edit`;
+  document.getElementById('editCatName').value = name;
+  document.getElementById('editCatType').value = type;
+  const radio = document.querySelector(`input[name="color"][id="ec_${color}"]`);
+  if (radio) radio.checked = true;
+  new bootstrap.Modal(document.getElementById('editCatModal')).show();
+}
+</script>
+{% endblock %}

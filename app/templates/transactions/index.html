@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}収支一覧 - 家計簿{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-list-ul"></i> 収支一覧</h4>
+  <a href="{{ url_for('transactions.new') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg"></i> 追加
+  </a>
+</div>
+
+<!-- フィルター -->
+<form method="get" class="row g-2 mb-3">
+  <div class="col-auto">
+    <select name="year" class="form-select form-select-sm">
+      {% for y in range(2020, 2030) %}
+        <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}年</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="month" class="form-select form-select-sm">
+      {% for m in range(1, 13) %}
+        <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}月</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="type" class="form-select form-select-sm">
+      <option value="">すべて</option>
+      <option value="income" {% if selected_type == 'income' %}selected{% endif %}>収入</option>
+      <option value="expense" {% if selected_type == 'expense' %}selected{% endif %}>支出</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="category_id" class="form-select form-select-sm">
+      <option value="">カテゴリ: すべて</option>
+      {% for cat in categories %}
+        <option value="{{ cat.id }}" {% if cat.id == selected_category %}selected{% endif %}>{{ cat.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-outline-secondary btn-sm">絞り込み</button>
+  </div>
+</form>
+
+<!-- 一覧テーブル -->
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>日付</th>
+          <th>内容</th>
+          <th>カテゴリ</th>
+          <th>ソース</th>
+          <th class="text-end">金額</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tx in transactions %}
+        <tr>
+          <td class="text-nowrap">{{ tx.date }}</td>
+          <td>
+            {{ tx.description }}
+            {% if tx.memo %}<small class="text-muted d-block">{{ tx.memo }}</small>{% endif %}
+          </td>
+          <td>
+            {% if tx.category %}
+              <span class="badge rounded-pill" style="background:{{ tx.category.color }}">{{ tx.category.name }}</span>
+            {% else %}
+              <span class="text-muted small">未分類</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if tx.source == 'gmail' %}
+              <span class="badge bg-info text-dark">Gmail</span>
+            {% elif tx.source == 'paypay' %}
+              <span class="badge bg-warning text-dark">PayPay</span>
+            {% else %}
+              <span class="badge bg-secondary">手動</span>
+            {% endif %}
+          </td>
+          <td class="text-end fw-bold {{ 'text-success' if tx.type == 'income' else 'text-danger' }}">
+            {{ '+' if tx.type == 'income' else '-' }}¥{{ '{:,}'.format(tx.amount) }}
+          </td>
+          <td class="text-nowrap">
+            <a href="{{ url_for('transactions.edit', tx_id=tx.id) }}" class="btn btn-outline-secondary btn-sm py-0">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <form method="post" action="{{ url_for('transactions.delete', tx_id=tx.id) }}"
+                  class="d-inline" onsubmit="return confirm('削除しますか？')">
+              <button type="submit" class="btn btn-outline-danger btn-sm py-0">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center text-muted py-4">データがありません</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
