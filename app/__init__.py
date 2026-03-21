@@ -1,4 +1,5 @@
-from flask import Flask
+import os
+from flask import Flask, request, Response
 from app.config import Config
 from app.extensions import db, scheduler
 from app.models import Category
@@ -20,9 +21,28 @@ DEFAULT_CATEGORIES = [
 ]
 
 
+def _apply_basic_auth(app):
+    """APP_USERNAME / APP_PASSWORD が設定されている場合のみ Basic 認証を有効化"""
+    username = os.environ.get("APP_USERNAME", "")
+    password = os.environ.get("APP_PASSWORD", "")
+    if not username or not password:
+        return  # ローカル開発時はスキップ
+
+    @app.before_request
+    def require_auth():
+        auth = request.authorization
+        if not auth or auth.username != username or auth.password != password:
+            return Response(
+                "このアプリへのアクセスには認証が必要です",
+                401,
+                {"WWW-Authenticate": 'Basic realm="家計簿アプリ"'},
+            )
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    _apply_basic_auth(app)
 
     db.init_app(app)
 

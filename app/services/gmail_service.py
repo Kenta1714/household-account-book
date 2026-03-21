@@ -13,8 +13,9 @@ from app.models import Transaction, EmailFormat, ScanLog, ScanSkipDetail
 from app.services.email_parser import extract_amount, extract_content
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-CREDENTIALS_FILE = "credentials.json"
-TOKEN_FILE = "token.json"
+# 本番環境では CREDENTIALS_FILE / TOKEN_FILE_PATH を env var で上書きできる
+CREDENTIALS_FILE = os.environ.get("CREDENTIALS_FILE", "credentials.json")
+TOKEN_FILE = os.environ.get("TOKEN_FILE_PATH", "token.json")
 
 # スキャン進捗（メモリ内）
 _scan_lock = threading.Lock()
@@ -40,6 +41,14 @@ def _update_progress(**kwargs):
 
 
 def get_flow(redirect_uri: str) -> Flow:
+    """credentials.json の内容を env var GOOGLE_CREDENTIALS_JSON から読む（本番用）。
+    env var が未設定の場合はローカルのファイルを使う。"""
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        import json
+        return Flow.from_client_config(
+            json.loads(creds_json), scopes=SCOPES, redirect_uri=redirect_uri
+        )
     return Flow.from_client_secrets_file(
         CREDENTIALS_FILE, scopes=SCOPES, redirect_uri=redirect_uri
     )

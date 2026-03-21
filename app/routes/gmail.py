@@ -3,6 +3,9 @@ import secrets
 import hashlib
 import base64
 
+# 本番環境では GMAIL_REDIRECT_URI に Render の URL を設定する
+_DEFAULT_REDIRECT_URI = "http://localhost:8080/gmail/oauth/callback"
+
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from app.extensions import db
 from app.models import EmailFormat, Category, ScanLog, ScanSkipDetail
@@ -11,9 +14,13 @@ from app.services.email_parser import preview_extraction
 
 bp = Blueprint("gmail", __name__, url_prefix="/gmail")
 
-REDIRECT_URI = "http://localhost:8080/gmail/oauth/callback"
 # セッションの代わりにファイルで保持（シングルユーザー・ローカル用）
-_PKCE_FILE = "pkce_verifier.txt"
+# 本番環境では PKCE_FILE_PATH で永続ディスク上のパスを指定する
+_PKCE_FILE = os.environ.get("PKCE_FILE_PATH", "pkce_verifier.txt")
+
+
+def _get_redirect_uri() -> str:
+    return os.environ.get("GMAIL_REDIRECT_URI", _DEFAULT_REDIRECT_URI)
 
 
 def _pkce_pair():
@@ -55,7 +62,7 @@ def index():
 def auth():
     verifier, challenge = _pkce_pair()
     _save_verifier(verifier)
-    flow = gmail_service.get_flow(REDIRECT_URI)
+    flow = gmail_service.get_flow(_get_redirect_uri())
     auth_url, state = flow.authorization_url(
         access_type="offline",
         prompt="consent",
@@ -67,7 +74,7 @@ def auth():
 
 @bp.route("/oauth/callback")
 def oauth_callback():
-    flow = gmail_service.get_flow(REDIRECT_URI)
+    flow = gmail_service.get_flow(_get_redirect_uri())
     code_verifier = _load_and_delete_verifier()
     flow.fetch_token(
         authorization_response=request.url,

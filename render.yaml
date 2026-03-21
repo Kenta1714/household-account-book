@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: household-account-book
+    env: python
+    # uv でパッケージをインストールして gunicorn で起動
+    buildCommand: pip install uv && uv sync --frozen
+    startCommand: uv run gunicorn run:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    envVars:
+      # Render が自動生成する強力なランダムキー
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      # ----- 手動で設定が必要な変数（Render ダッシュボードで入力）-----
+      # アプリへのアクセスを保護する Basic 認証の認証情報
+      - key: APP_USERNAME
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      # Gmail OAuth 用 credentials.json の内容をそのまま貼り付ける
+      - key: GOOGLE_CREDENTIALS_JSON
+        sync: false
+      # デプロイ後に確定する Render の URL を設定する（例: https://xxxx.onrender.com/gmail/oauth/callback）
+      - key: GMAIL_REDIRECT_URI
+        sync: false
+      # ----- 永続ディスクを使う場合のパス設定 -----
+      - key: DATABASE_URL
+        value: sqlite:////data/household.db
+      - key: TOKEN_FILE_PATH
+        value: /data/token.json
+      - key: PKCE_FILE_PATH
+        value: /data/pkce_verifier.txt
+    # SQLite DB と Gmail トークンを永続化するディスク（月 $7）
+    disk:
+      name: household-data
+      mountPath: /data
+      sizeGB: 1
