@@ -14,10 +14,6 @@ from app.services.email_parser import preview_extraction
 
 bp = Blueprint("gmail", __name__, url_prefix="/gmail")
 
-# セッションの代わりにファイルで保持（シングルユーザー・ローカル用）
-# 本番環境では PKCE_FILE_PATH で永続ディスク上のパスを指定する
-_PKCE_FILE = os.environ.get("PKCE_FILE_PATH", "pkce_verifier.txt")
-
 
 def _get_redirect_uri() -> str:
     return os.environ.get("GMAIL_REDIRECT_URI", _DEFAULT_REDIRECT_URI)
@@ -32,17 +28,11 @@ def _pkce_pair():
 
 
 def _save_verifier(verifier: str):
-    with open(_PKCE_FILE, "w") as f:
-        f.write(verifier)
+    session["pkce_verifier"] = verifier
 
 
 def _load_and_delete_verifier() -> str | None:
-    if not os.path.exists(_PKCE_FILE):
-        return None
-    with open(_PKCE_FILE) as f:
-        verifier = f.read().strip()
-    os.remove(_PKCE_FILE)
-    return verifier or None
+    return session.pop("pkce_verifier", None)
 
 
 @bp.route("/")

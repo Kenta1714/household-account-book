@@ -9,9 +9,17 @@ if os.environ.get("OAUTHLIB_INSECURE_TRANSPORT") == "1":
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 
+def _get_db_url() -> str:
+    url = os.environ.get("DATABASE_URL", "sqlite:///household.db")
+    # Render の PostgreSQL URL は "postgres://" で始まるが SQLAlchemy は "postgresql://" が必要
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return url
+
+
 class Config:
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY") or "dev-secret-key-change-in-production"
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///household.db")
+    SQLALCHEMY_DATABASE_URI = _get_db_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     # 本番環境では SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True が望ましい
     SESSION_COOKIE_HTTPONLY = True

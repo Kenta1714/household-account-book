@@ -9,11 +9,13 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
 from app.extensions import db
-from app.models import Transaction, EmailFormat, ScanLog, ScanSkipDetail
+from app.models import Transaction, EmailFormat, ScanLog, ScanSkipDetail, Setting
 from app.services.email_parser import extract_amount, extract_content
 
+_GMAIL_TOKEN_KEY = "gmail_token"
+
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-# 本番環境では CREDENTIALS_FILE / TOKEN_FILE_PATH を env var で上書きできる
+# ローカル開発用のフォールバックファイルパス（本番DBが使えない場合）
 CREDENTIALS_FILE = os.environ.get("CREDENTIALS_FILE", "credentials.json")
 TOKEN_FILE = os.environ.get("TOKEN_FILE_PATH", "token.json")
 
@@ -54,19 +56,49 @@ def get_flow(redirect_uri: str) -> Flow:
     )
 
 
+def _load_token_json() -> str | None:
+    """DB → ローカルファイルの順でトークン JSON を読む"""
+    try:
+        row = Setting.query.get(_GMAIL_TOKEN_KEY)
+        if row and row.value:
+            return row.value
+    except Exception:
+        pass
+    # DB が使えない場合（ローカル開発初回など）はファイルにフォールバック
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE) as f:
+            return f.read()
+    return None
+
+
+def _save_token(creds: Credentials):
+    """DB にトークンを保存する。DB が使えない場合はファイルにフォールバック"""
+    token_json = creds.to_json()
+    try:
+        row = Setting.query.get(_GMAIL_TOKEN_KEY)
+        if row:
+            row.value = token_json
+        else:
+            db.session.add(Setting(key=_GMAIL_TOKEN_KEY, value=token_json))
+        db.session.commit()
+        return
+    except Exception:
+        db.session.rollback()
+    with open(TOKEN_FILE, "w") as f:
+        f.write(token_json)
+
+
 def get_credentials() -> Credentials | None:
-    if not os.path.exists(TOKEN_FILE):
+    token_json = _load_token_json()
+    if not token_json:
         return None
-    creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    creds = Credentials.from_authorized_user_info(
+        __import__("json").loads(token_json), SCOPES
+    )
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
         _save_token(creds)
     return creds if creds and creds.valid else None
-
-
-def _save_token(creds: Credentials):
-    with open(TOKEN_FILE, "w") as f:
-        f.write(creds.to_json())
 
 
 def is_authenticated() -> bool:
