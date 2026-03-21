@@ -83,10 +83,18 @@ def _migrate_db():
     if is_postgres:
         migrations = [
             "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS source_detail VARCHAR(200)",
+            "ALTER TABLE email_formats ADD COLUMN IF NOT EXISTS card_name_mode VARCHAR(20)",
+            "ALTER TABLE email_formats ADD COLUMN IF NOT EXISTS card_name_prefix VARCHAR(255)",
+            "ALTER TABLE email_formats ADD COLUMN IF NOT EXISTS card_name_suffix VARCHAR(255)",
+            "ALTER TABLE email_formats ADD COLUMN IF NOT EXISTS card_name_keywords TEXT",
         ]
     else:
         migrations = [
             "ALTER TABLE transactions ADD COLUMN source_detail VARCHAR(200)",
+            "ALTER TABLE email_formats ADD COLUMN card_name_mode VARCHAR(20)",
+            "ALTER TABLE email_formats ADD COLUMN card_name_prefix VARCHAR(255)",
+            "ALTER TABLE email_formats ADD COLUMN card_name_suffix VARCHAR(255)",
+            "ALTER TABLE email_formats ADD COLUMN card_name_keywords TEXT",
         ]
     for sql in migrations:
         try:

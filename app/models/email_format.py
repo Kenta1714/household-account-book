@@ -12,6 +12,10 @@ class EmailFormat(db.Model):
     amount_suffix = db.Column(db.String(255), nullable=False)
     content_prefix = db.Column(db.String(255), nullable=True)   # ご利用内容直前テキスト
     content_suffix = db.Column(db.String(255), nullable=True)   # ご利用内容直後テキスト
+    card_name_mode = db.Column(db.String(20), nullable=True)     # "extract" or "keyword"
+    card_name_prefix = db.Column(db.String(255), nullable=True)  # extract mode: 直前テキスト
+    card_name_suffix = db.Column(db.String(255), nullable=True)  # extract mode: 直後テキスト
+    card_name_keywords = db.Column(db.Text, nullable=True)       # keyword mode: カンマ区切りキーワード
     default_category_id = db.Column(db.Integer, db.ForeignKey("categories.id"), nullable=True)
     sample_text = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

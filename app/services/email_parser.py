@@ -33,6 +33,25 @@ def extract_content(body: str, email_format: EmailFormat) -> str | None:
     return None
 
 
+def extract_card_name(body: str, email_format) -> str | None:
+    """カード名をメール本文から抽出する"""
+    if not email_format.card_name_mode:
+        return None
+    if email_format.card_name_mode == "extract":
+        if not email_format.card_name_prefix or not email_format.card_name_suffix:
+            return None
+        pattern = build_content_pattern(email_format.card_name_prefix, email_format.card_name_suffix)
+        match = re.search(pattern, body)
+        return match.group(1).strip() if match else None
+    if email_format.card_name_mode == "keyword":
+        if not email_format.card_name_keywords:
+            return None
+        for kw in [k.strip() for k in email_format.card_name_keywords.split(",") if k.strip()]:
+            if kw in body:
+                return kw
+    return None
+
+
 def preview_extraction(body: str, prefix: str, suffix: str, mode: str = "amount") -> dict:
     """フォーマット登録時のプレビュー用"""
     if mode == "content":

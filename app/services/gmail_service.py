@@ -10,7 +10,7 @@ from googleapiclient.discovery import build
 
 from app.extensions import db
 from app.models import Transaction, EmailFormat, ScanLog, ScanSkipDetail, Setting
-from app.services.email_parser import extract_amount, extract_content
+from app.services.email_parser import extract_amount, extract_content, extract_card_name
 
 _GMAIL_TOKEN_KEY = "gmail_token"
 
@@ -236,7 +236,8 @@ def _do_scan(batch: bool) -> dict:
                 continue
 
             content = extract_content(body, matched_format)
-            description = content if content else matched_format.company_name
+            card_name = extract_card_name(body, matched_format)
+            description = content if content else (card_name or matched_format.company_name)
 
             try:
                 tx_date = datetime.strptime(date_str[:16], "%a, %d %b %Y").date()
@@ -249,7 +250,7 @@ def _do_scan(batch: bool) -> dict:
                 type="expense",
                 description=description,
                 source="gmail",
-                source_detail=matched_format.company_name,
+                source_detail=card_name if card_name else matched_format.company_name,
                 external_id=external_id,
                 category_id=matched_format.default_category_id,
             )

@@ -108,6 +108,10 @@ def format_new():
         amount_suffix=request.form["amount_suffix"],
         content_prefix=request.form.get("content_prefix") or None,
         content_suffix=request.form.get("content_suffix") or None,
+        card_name_mode=request.form.get("card_name_mode") or None,
+        card_name_prefix=request.form.get("card_name_prefix") or None,
+        card_name_suffix=request.form.get("card_name_suffix") or None,
+        card_name_keywords=request.form.get("card_name_keywords") or None,
         default_category_id=request.form.get("default_category_id") or None,
         sample_text=request.form.get("sample_text"),
     )

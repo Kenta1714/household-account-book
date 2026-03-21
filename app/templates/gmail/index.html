@@ -60,10 +60,11 @@
     <table class="table table-hover mb-0">
       <thead class="table-light">
         <tr>
-          <th>会社名</th>
+          <th>カード名</th>
           <th>送信元</th>
           <th>金額（前/後）</th>
           <th>ご利用内容（前/後）</th>
+          <th>カード名抽出</th>
           <th>デフォルトカテゴリ</th>
           <th></th>
         </tr>
@@ -77,6 +78,17 @@
           <td>
             {% if fmt.content_prefix %}
               <code>{{ fmt.content_prefix }}</code> / <code>{{ fmt.content_suffix }}</code>
+            {% else %}
+              <span class="text-muted small">未設定</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if fmt.card_name_mode == 'extract' %}
+              <span class="badge bg-info text-dark">前後テキスト</span>
+              <small class="text-muted d-block">{{ fmt.card_name_prefix }} / {{ fmt.card_name_suffix }}</small>
+            {% elif fmt.card_name_mode == 'keyword' %}
+              <span class="badge bg-secondary">キーワード</span>
+              <small class="text-muted d-block">{{ fmt.card_name_keywords }}</small>
             {% else %}
               <span class="text-muted small">未設定</span>
             {% endif %}
@@ -161,7 +173,7 @@
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-md-6">
-              <label class="form-label">会社名</label>
+              <label class="form-label">カード名</label>
               <input type="text" name="company_name" class="form-control" placeholder="例: 楽天カード" required>
             </div>
             <div class="col-md-6">
@@ -210,6 +222,64 @@
             </div>
             <div class="col-12" id="previewContentResult" style="display:none">
               <div class="alert mb-0" id="previewContentAlert"></div>
+            </div>
+
+            <!-- カード名抽出 -->
+            <div class="col-12"><hr class="my-1"><p class="mb-1 fw-bold small text-muted">カード名の抽出（任意）</p></div>
+            <div class="col-12">
+              <div class="d-flex gap-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="card_name_mode" id="cardNameModeNone"
+                         value="" checked onchange="updateCardNameMode(this.value)">
+                  <label class="form-check-label" for="cardNameModeNone">なし</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="card_name_mode" id="cardNameModeExtract"
+                         value="extract" onchange="updateCardNameMode(this.value)">
+                  <label class="form-check-label" for="cardNameModeExtract">前後テキストで抽出</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="card_name_mode" id="cardNameModeKeyword"
+                         value="keyword" onchange="updateCardNameMode(this.value)">
+                  <label class="form-check-label" for="cardNameModeKeyword">キーワード検索</label>
+                </div>
+              </div>
+            </div>
+            <div id="cardNameExtractFields" style="display:none" class="col-12">
+              <div class="row g-2">
+                <div class="col-md-5">
+                  <label class="form-label small">カード名直前のテキスト</label>
+                  <input type="text" id="cardNamePrefix" name="card_name_prefix" class="form-control"
+                         placeholder="例: カード名称：">
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label small">カード名直後のテキスト</label>
+                  <input type="text" id="cardNameSuffix" name="card_name_suffix" class="form-control"
+                         placeholder="例: （改行など）">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                  <button type="button" class="btn btn-outline-secondary w-100" id="previewCardNameBtn">確認</button>
+                </div>
+                <div class="col-12" id="previewCardNameResult" style="display:none">
+                  <div class="alert mb-0" id="previewCardNameAlert"></div>
+                </div>
+              </div>
+            </div>
+            <div id="cardNameKeywordFields" style="display:none" class="col-12">
+              <div class="row g-2">
+                <div class="col-md-10">
+                  <label class="form-label small">キーワード（カンマ区切り）</label>
+                  <input type="text" id="cardNameKeywords" name="card_name_keywords" class="form-control"
+                         placeholder="例: Aカード,Bカード,Cカード">
+                  <div class="form-text">メール本文に含まれる最初のキーワードがカード名として使われます</div>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                  <button type="button" class="btn btn-outline-secondary w-100" id="checkKeywordsBtn">確認</button>
+                </div>
+                <div class="col-12" id="checkKeywordsResult" style="display:none">
+                  <div class="alert mb-0" id="checkKeywordsAlert"></div>
+                </div>
+              </div>
             </div>
 
             <div class="col-md-6">
@@ -337,6 +407,42 @@ document.getElementById('previewContentBtn').addEventListener('click', () => {
     document.getElementById('contentSuffix').value,
     'previewContentResult', 'previewContentAlert'
   );
+});
+
+// カード名抽出モード切替
+function updateCardNameMode(mode) {
+  document.getElementById('cardNameExtractFields').style.display = mode === 'extract' ? '' : 'none';
+  document.getElementById('cardNameKeywordFields').style.display = mode === 'keyword' ? '' : 'none';
+}
+
+document.getElementById('previewCardNameBtn').addEventListener('click', () => {
+  previewExtraction(
+    'content',
+    document.getElementById('cardNamePrefix').value,
+    document.getElementById('cardNameSuffix').value,
+    'previewCardNameResult', 'previewCardNameAlert'
+  );
+});
+
+document.getElementById('checkKeywordsBtn').addEventListener('click', () => {
+  const body = document.getElementById('sampleText').value;
+  const kws = document.getElementById('cardNameKeywords').value;
+  const resultDiv = document.getElementById('checkKeywordsResult');
+  const alertDiv = document.getElementById('checkKeywordsAlert');
+  resultDiv.style.display = '';
+  if (!body || !kws) {
+    alertDiv.className = 'alert alert-warning mb-0';
+    alertDiv.textContent = 'サンプル本文とキーワードを入力してください';
+    return;
+  }
+  const matched = kws.split(',').map(k => k.trim()).filter(k => k && body.includes(k));
+  if (matched.length > 0) {
+    alertDiv.className = 'alert alert-success mb-0';
+    alertDiv.textContent = `マッチしたキーワード: "${matched[0]}"（最初のマッチが使用されます）`;
+  } else {
+    alertDiv.className = 'alert alert-danger mb-0';
+    alertDiv.textContent = 'いずれのキーワードも本文に見つかりませんでした';
+  }
 });
 
 // スキップ詳細モーダル
