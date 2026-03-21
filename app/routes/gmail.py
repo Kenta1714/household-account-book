@@ -1,10 +1,41 @@
+import os
+import secrets
+import hashlib
+import base64
+
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from app.extensions import db
-from app.models import EmailFormat, Category, ScanLog
+from app.models import EmailFormat, Category, ScanLog, ScanSkipDetail
 from app.services import gmail_service
 from app.services.email_parser import preview_extraction
 
 bp = Blueprint("gmail", __name__, url_prefix="/gmail")
+
+REDIRECT_URI = "http://localhost:8080/gmail/oauth/callback"
+# セッションの代わりにファイルで保持（シングルユーザー・ローカル用）
+_PKCE_FILE = "pkce_verifier.txt"
+
+
+def _pkce_pair():
+    verifier = secrets.token_urlsafe(96)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).rstrip(b"=").decode()
+    return verifier, challenge
+
+
+def _save_verifier(verifier: str):
+    with open(_PKCE_FILE, "w") as f:
+        f.write(verifier)
+
+
+def _load_and_delete_verifier() -> str | None:
+    if not os.path.exists(_PKCE_FILE):
+        return None
+    with open(_PKCE_FILE) as f:
+        verifier = f.read().strip()
+    os.remove(_PKCE_FILE)
+    return verifier or None
 
 
 @bp.route("/")
@@ -22,18 +53,26 @@ def index():
 
 @bp.route("/auth")
 def auth():
-    redirect_uri = url_for("gmail.oauth_callback", _external=True)
-    flow = gmail_service.get_flow(redirect_uri)
-    auth_url, state = flow.authorization_url(access_type="offline", prompt="consent")
-    session["oauth_state"] = state
+    verifier, challenge = _pkce_pair()
+    _save_verifier(verifier)
+    flow = gmail_service.get_flow(REDIRECT_URI)
+    auth_url, state = flow.authorization_url(
+        access_type="offline",
+        prompt="consent",
+        code_challenge=challenge,
+        code_challenge_method="S256",
+    )
     return redirect(auth_url)
 
 
 @bp.route("/oauth/callback")
 def oauth_callback():
-    redirect_uri = url_for("gmail.oauth_callback", _external=True)
-    flow = gmail_service.get_flow(redirect_uri)
-    flow.fetch_token(authorization_response=request.url)
+    flow = gmail_service.get_flow(REDIRECT_URI)
+    code_verifier = _load_and_delete_verifier()
+    flow.fetch_token(
+        authorization_response=request.url,
+        code_verifier=code_verifier,
+    )
     gmail_service._save_token(flow.credentials)
     flash("Gmail連携が完了しました", "success")
     return redirect(url_for("gmail.index"))
@@ -42,12 +81,25 @@ def oauth_callback():
 @bp.route("/scan", methods=["POST"])
 def scan():
     batch = request.form.get("batch") == "1"
-    try:
-        result = gmail_service.scan_emails(batch=batch)
-        flash(f"スキャン完了: {result['added']}件追加, {result['skipped']}件スキップ", "success")
-    except Exception as e:
-        flash(f"エラー: {e}", "danger")
-    return redirect(url_for("gmail.index"))
+    progress = gmail_service.get_scan_progress()
+    if progress["running"]:
+        return jsonify({"error": "スキャン中です"}), 409
+
+    from threading import Thread
+    from flask import current_app
+    app = current_app._get_current_object()
+
+    def run():
+        with app.app_context():
+            gmail_service.scan_emails(batch=batch)
+
+    Thread(target=run, daemon=True).start()
+    return jsonify({"started": True})
+
+
+@bp.route("/scan/progress")
+def scan_progress():
+    return jsonify(gmail_service.get_scan_progress())
 
 
 @bp.route("/formats/new", methods=["POST"])
@@ -57,6 +109,8 @@ def format_new():
         sender_email=request.form["sender_email"],
         amount_prefix=request.form["amount_prefix"],
         amount_suffix=request.form["amount_suffix"],
+        content_prefix=request.form.get("content_prefix") or None,
+        content_suffix=request.form.get("content_suffix") or None,
         default_category_id=request.form.get("default_category_id") or None,
         sample_text=request.form.get("sample_text"),
     )
@@ -75,10 +129,37 @@ def format_delete(fmt_id):
     return redirect(url_for("gmail.index"))
 
 
+@bp.route("/scan/skip_details")
+def scan_skip_details():
+    latest_log = (
+        ScanLog.query.filter_by(source="gmail")
+        .order_by(ScanLog.scanned_at.desc())
+        .first()
+    )
+    if not latest_log:
+        return jsonify([])
+    details = ScanSkipDetail.query.filter_by(scan_log_id=latest_log.id).all()
+    reason_labels = {
+        "duplicate": "重複（インポート済み）",
+        "no_format": "送信元フォーマット未登録",
+        "no_amount": "金額抽出失敗",
+    }
+    return jsonify([{
+        "reason": d.reason,
+        "reason_label": reason_labels.get(d.reason, d.reason),
+        "sender": d.sender or "",
+        "subject": d.subject or "",
+        "date_str": d.date_str or "",
+        "body": d.body or "",
+        "extra_info": d.extra_info or "",
+    } for d in details])
+
+
 @bp.route("/formats/preview", methods=["POST"])
 def format_preview():
     body = request.json.get("body", "")
     prefix = request.json.get("prefix", "")
     suffix = request.json.get("suffix", "")
-    result = preview_extraction(body, prefix, suffix)
+    mode = request.json.get("mode", "amount")
+    result = preview_extraction(body, prefix, suffix, mode=mode)
     return jsonify(result)

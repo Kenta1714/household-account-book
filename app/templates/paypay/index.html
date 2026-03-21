@@ -2,6 +2,14 @@
 {% block title %}PayPay取り込み - 家計簿{% endblock %}
 
 {% block content %}
+
+<!-- 取り込み中オーバーレイ -->
+<div id="uploadOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:12px">
+  <div class="spinner-border text-light" style="width:3rem;height:3rem"></div>
+  <div class="text-white fw-bold fs-5">取り込み中...</div>
+  <div class="text-white-50 small">しばらくお待ちください</div>
+</div>
+
 <h4 class="mb-4"><i class="bi bi-upload"></i> PayPay CSV 取り込み</h4>
 
 <div class="row g-4">
@@ -11,9 +19,9 @@
         <h6 class="card-title">CSVアップロード</h6>
         <p class="text-muted small">
           PayPayアプリの「取引履歴」からエクスポートしたCSVファイルをアップロードしてください。<br>
-          重複する取引は自動的にスキップされます。
+          重複する取引（同じ取引番号）は自動的にスキップされます。
         </p>
-        <form method="post" action="{{ url_for('paypay.upload') }}" enctype="multipart/form-data">
+        <form id="uploadForm" method="post" action="{{ url_for('paypay.upload') }}" enctype="multipart/form-data">
           <div class="mb-3">
             <label class="form-label">CSVファイル</label>
             <input type="file" name="csv_file" class="form-control" accept=".csv" required>
@@ -27,7 +35,7 @@
               </label>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary">
+          <button type="submit" class="btn btn-primary" id="uploadBtn">
             <i class="bi bi-upload"></i> 取り込む
           </button>
         </form>
@@ -62,4 +70,13 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('uploadForm').addEventListener('submit', function() {
+  document.getElementById('uploadOverlay').style.display = 'flex';
+  document.getElementById('uploadBtn').disabled = true;
+});
+</script>
 {% endblock %}

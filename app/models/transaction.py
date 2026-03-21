@@ -13,6 +13,7 @@ class Transaction(db.Model):
     memo = db.Column(db.Text, nullable=True)
     category_id = db.Column(db.Integer, db.ForeignKey("categories.id"), nullable=True)
     source = db.Column(db.String(20), default="manual")  # "manual" / "gmail" / "paypay"
+    source_detail = db.Column(db.String(200), nullable=True)  # Gmail: 会社名
     external_id = db.Column(db.String(255), nullable=True, unique=True)  # 重複防止
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

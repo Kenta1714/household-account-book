@@ -1,12 +1,17 @@
 {% extends "base.html" %}
-{% block title %}収支一覧 - 家計簿{% endblock %}
+{% block title %}取引一覧 - 家計簿{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0"><i class="bi bi-list-ul"></i> 収支一覧</h4>
-  <a href="{{ url_for('transactions.new') }}" class="btn btn-primary btn-sm">
-    <i class="bi bi-plus-lg"></i> 追加
-  </a>
+  <h4 class="mb-0"><i class="bi bi-list-ul"></i> 取引一覧</h4>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#bulkDeleteModal">
+      <i class="bi bi-trash"></i> 一括削除
+    </button>
+    <a href="{{ url_for('transactions.new') }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg"></i> 追加
+    </a>
+  </div>
 </div>
 
 <!-- フィルター -->
@@ -41,6 +46,14 @@
     </select>
   </div>
   <div class="col-auto">
+    <select name="source" class="form-select form-select-sm">
+      <option value="">ソース: すべて</option>
+      <option value="manual" {% if selected_source == 'manual' %}selected{% endif %}>手動</option>
+      <option value="gmail" {% if selected_source == 'gmail' %}selected{% endif %}>Gmail</option>
+      <option value="paypay" {% if selected_source == 'paypay' %}selected{% endif %}>PayPay</option>
+    </select>
+  </div>
+  <div class="col-auto">
     <button type="submit" class="btn btn-outline-secondary btn-sm">絞り込み</button>
   </div>
 </form>
@@ -53,6 +66,7 @@
         <tr>
           <th>日付</th>
           <th>内容</th>
+          <th>メモ</th>
           <th>カテゴリ</th>
           <th>ソース</th>
           <th class="text-end">金額</th>
@@ -63,10 +77,8 @@
         {% for tx in transactions %}
         <tr>
           <td class="text-nowrap">{{ tx.date }}</td>
-          <td>
-            {{ tx.description }}
-            {% if tx.memo %}<small class="text-muted d-block">{{ tx.memo }}</small>{% endif %}
-          </td>
+          <td>{{ tx.description }}</td>
+          <td class="text-muted small">{{ tx.memo or '' }}</td>
           <td>
             {% if tx.category %}
               <span class="badge rounded-pill" style="background:{{ tx.category.color }}">{{ tx.category.name }}</span>
@@ -74,9 +86,12 @@
               <span class="text-muted small">未分類</span>
             {% endif %}
           </td>
-          <td>
+          <td class="text-nowrap">
             {% if tx.source == 'gmail' %}
               <span class="badge bg-info text-dark">Gmail</span>
+              {% if tx.source_detail %}
+                <small class="text-muted ms-1">{{ tx.source_detail }}</small>
+              {% endif %}
             {% elif tx.source == 'paypay' %}
               <span class="badge bg-warning text-dark">PayPay</span>
             {% else %}
@@ -99,10 +114,119 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="text-center text-muted py-4">データがありません</td></tr>
+        <tr><td colspan="7" class="text-center text-muted py-4">データがありません</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+<!-- 一括削除モーダル -->
+<div class="modal fade" id="bulkDeleteModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('transactions.bulk_delete') }}" id="bulkDeleteForm">
+        <div class="modal-header">
+          <h5 class="modal-title text-danger"><i class="bi bi-trash"></i> 一括削除</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small mb-3">条件に一致するすべての取引を削除します。削除後は元に戻せません。</p>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold">期間</label>
+            <div class="d-flex gap-2 align-items-center">
+              <input type="date" name="date_from" id="dateFrom" class="form-control form-control-sm">
+              <span class="text-muted">〜</span>
+              <input type="date" name="date_to" id="dateTo" class="form-control form-control-sm">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold">カテゴリ</label>
+            <select name="bulk_category_id" id="bulkCategoryId" class="form-select form-select-sm">
+              <option value="">すべて</option>
+              <option value="none">未分類</option>
+              {% for cat in categories %}
+                <option value="{{ cat.id }}">{{ cat.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold">ソース</label>
+            <select name="bulk_source" id="bulkSource" class="form-select form-select-sm">
+              <option value="">すべて</option>
+              <option value="manual">手動</option>
+              <option value="gmail">Gmail</option>
+              <option value="paypay">PayPay</option>
+            </select>
+          </div>
+
+          <div class="d-flex align-items-center gap-3 mt-3 pt-3 border-top">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="checkCountBtn">
+              <i class="bi bi-search"></i> 対象件数を確認
+            </button>
+            <span id="countResult" class="text-muted small"></span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+          <button type="submit" class="btn btn-danger" id="bulkDeleteBtn" disabled>
+            <i class="bi bi-trash"></i> 削除実行
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const countResult = document.getElementById('countResult');
+const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+
+document.getElementById('checkCountBtn').addEventListener('click', async () => {
+  const params = new URLSearchParams({
+    date_from: document.getElementById('dateFrom').value,
+    date_to: document.getElementById('dateTo').value,
+    bulk_category_id: document.getElementById('bulkCategoryId').value,
+    bulk_source: document.getElementById('bulkSource').value,
+  });
+  const res = await fetch(`/transactions/bulk_delete_count?${params}`);
+  const { count } = await res.json();
+  if (count === 0) {
+    countResult.textContent = '対象の取引はありません';
+    countResult.className = 'text-muted small';
+    bulkDeleteBtn.disabled = true;
+  } else {
+    countResult.textContent = `${count}件が対象です`;
+    countResult.className = 'text-danger small fw-bold';
+    bulkDeleteBtn.disabled = false;
+  }
+});
+
+// フィルター変更時に件数をリセット
+['dateFrom', 'dateTo', 'bulkCategoryId', 'bulkSource'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    countResult.textContent = '';
+    bulkDeleteBtn.disabled = true;
+  });
+});
+
+// 削除実行の確認
+document.getElementById('bulkDeleteForm').addEventListener('submit', e => {
+  const countText = countResult.textContent;
+  if (!confirm(`${countText}\n\nこの操作は取り消せません。本当に削除しますか？`)) {
+    e.preventDefault();
+  }
+});
+
+// モーダルを開くたびにリセット
+document.getElementById('bulkDeleteModal').addEventListener('show.bs.modal', () => {
+  countResult.textContent = '';
+  bulkDeleteBtn.disabled = true;
+});
+</script>
 {% endblock %}

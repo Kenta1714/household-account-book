@@ -35,22 +35,38 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _migrate_db()
         _seed_categories()
 
     # Gmail定期スキャン（30分ごと）
-    from app.services import gmail_service as gs
-    from app.services.gmail_service import scan_emails
+    # Flaskのdebugリローダーが起動する子プロセスではスケジューラを起動しない
+    import os
+    if not scheduler.running and os.environ.get("WERKZEUG_RUN_MAIN") != "false":
+        from app.services import gmail_service as gs
+        from app.services.gmail_service import scan_emails
 
-    def scheduled_gmail_scan():
-        with app.app_context():
-            if gs.is_authenticated():
-                scan_emails(batch=False)
+        def scheduled_gmail_scan():
+            with app.app_context():
+                if gs.is_authenticated():
+                    scan_emails(batch=False)
 
-    if not scheduler.running:
         scheduler.add_job(scheduled_gmail_scan, "interval", minutes=30, id="gmail_scan")
         scheduler.start()
 
     return app
+
+
+def _migrate_db():
+    """既存DBに新カラムを追加する（SQLite用の簡易マイグレーション）"""
+    migrations = [
+        "ALTER TABLE transactions ADD COLUMN source_detail VARCHAR(200)",
+    ]
+    for sql in migrations:
+        try:
+            db.session.execute(db.text(sql))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 def _seed_categories():

@@ -12,6 +12,7 @@ def index():
     month = request.args.get("month", date.today().month, type=int)
     category_id = request.args.get("category_id", type=int)
     tx_type = request.args.get("type", "")
+    source = request.args.get("source", "")
 
     query = Transaction.query.filter(
         db.extract("year", Transaction.date) == year,
@@ -21,6 +22,8 @@ def index():
         query = query.filter(Transaction.category_id == category_id)
     if tx_type in ("income", "expense"):
         query = query.filter(Transaction.type == tx_type)
+    if source in ("manual", "gmail", "paypay"):
+        query = query.filter(Transaction.source == source)
 
     transactions = query.order_by(Transaction.date.desc(), Transaction.id.desc()).all()
     categories = Category.query.order_by(Category.name).all()
@@ -33,6 +36,7 @@ def index():
         month=month,
         selected_category=category_id,
         selected_type=tx_type,
+        selected_source=source,
     )
 
 
@@ -87,3 +91,44 @@ def delete(tx_id):
     db.session.commit()
     flash("削除しました", "success")
     return redirect(url_for("transactions.index", year=year, month=month))
+
+
+def _build_bulk_query(form):
+    """一括削除用のフィルタークエリを構築する"""
+    query = Transaction.query
+    date_from = form.get("date_from")
+    date_to = form.get("date_to")
+    category_id = form.get("bulk_category_id")
+    source = form.get("bulk_source")
+
+    if date_from:
+        query = query.filter(Transaction.date >= date_from)
+    if date_to:
+        query = query.filter(Transaction.date <= date_to)
+    if category_id == "none":
+        query = query.filter(Transaction.category_id.is_(None))
+    elif category_id:
+        query = query.filter(Transaction.category_id == int(category_id))
+    if source in ("manual", "gmail", "paypay"):
+        query = query.filter(Transaction.source == source)
+
+    return query
+
+
+@bp.route("/bulk_delete_count")
+def bulk_delete_count():
+    count = _build_bulk_query(request.args).count()
+    return jsonify({"count": count})
+
+
+@bp.route("/bulk_delete", methods=["POST"])
+def bulk_delete():
+    query = _build_bulk_query(request.form)
+    count = query.count()
+    if count == 0:
+        flash("対象の取引がありません", "warning")
+        return redirect(url_for("transactions.index"))
+    query.delete(synchronize_session=False)
+    db.session.commit()
+    flash(f"{count}件の取引を削除しました", "success")
+    return redirect(url_for("transactions.index"))

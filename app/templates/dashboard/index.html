@@ -2,11 +2,11 @@
 {% block title %}ダッシュボード - 家計簿{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0"><i class="bi bi-house"></i> ダッシュボード</h4>
-  <div class="d-flex gap-2 align-items-center">
+<!-- ヘッダー：年月ナビゲーション -->
+<div class="mb-4">
+  <div class="d-flex justify-content-end gap-2 mb-2">
     <select id="yearSelect" class="form-select form-select-sm" style="width:auto">
-      {% for y in range(today.year - 2, today.year + 1) %}
+      {% for y in range(today.year - 3, today.year + 2) %}
         <option value="{{ y }}" {% if y == today.year %}selected{% endif %}>{{ y }}年</option>
       {% endfor %}
     </select>
@@ -16,52 +16,110 @@
       {% endfor %}
     </select>
   </div>
+  <div class="d-flex justify-content-center align-items-center gap-3">
+    <button class="btn btn-outline-secondary btn-sm px-3" id="prevMonthBtn">
+      <i class="bi bi-chevron-left fs-5"></i>
+    </button>
+    <h3 class="mb-0 fw-bold" id="currentMonthLabel" style="min-width:160px;text-align:center"></h3>
+    <button class="btn btn-outline-secondary btn-sm px-3" id="nextMonthBtn">
+      <i class="bi bi-chevron-right fs-5"></i>
+    </button>
+  </div>
 </div>
 
 <!-- サマリーカード -->
-<div class="row g-3 mb-4">
-  <div class="col-md-4">
+<div class="row g-3 mb-2 justify-content-center">
+  <div class="col-4">
     <div class="card border-0 shadow-sm">
-      <div class="card-body">
+      <div class="card-body py-2 d-flex justify-content-between align-items-center">
         <div class="text-muted small">収入</div>
-        <div class="fs-3 fw-bold text-success" id="summaryIncome">-</div>
+        <div class="fs-5 fw-bold text-success" id="summaryIncome">-</div>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
+  <div class="col-4">
     <div class="card border-0 shadow-sm">
-      <div class="card-body">
+      <div class="card-body py-2 d-flex justify-content-between align-items-center">
         <div class="text-muted small">支出</div>
-        <div class="fs-3 fw-bold text-danger" id="summaryExpense">-</div>
+        <div class="fs-5 fw-bold text-danger" id="summaryExpense">-</div>
       </div>
     </div>
   </div>
-  <div class="col-md-4">
+</div>
+<div class="row g-3 mb-4 justify-content-center">
+  <div class="col-8">
     <div class="card border-0 shadow-sm">
-      <div class="card-body">
+      <div class="card-body py-2 d-flex justify-content-between align-items-center">
         <div class="text-muted small">収支</div>
-        <div class="fs-3 fw-bold" id="summaryBalance">-</div>
+        <div class="fs-2 fw-bold" id="summaryBalance">-</div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- グラフ -->
-<div class="row g-3 mb-4">
-  <div class="col-md-8">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body">
-        <h6 class="card-title text-muted">月別収支（年間）</h6>
-        <canvas id="monthlyChart" height="120"></canvas>
-      </div>
-    </div>
+<!-- グラフカルーセル -->
+<div class="mb-4">
+  <!-- タブ付きインジケーター -->
+  <div class="d-flex justify-content-center align-items-center gap-2 mb-3">
+    <button class="btn btn-outline-secondary btn-sm px-2 py-1" id="slidePrevBtn">
+      <i class="bi bi-chevron-left"></i>
+    </button>
+    <span class="slide-tab active" data-slide="0">日別収支</span>
+    <span class="slide-tab" data-slide="1">カテゴリ内訳</span>
+    <span class="slide-tab" data-slide="2">月別収支</span>
+    <button class="btn btn-outline-secondary btn-sm px-2 py-1" id="slideNextBtn">
+      <i class="bi bi-chevron-right"></i>
+    </button>
   </div>
-  <div class="col-md-4">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body">
-        <h6 class="card-title text-muted">支出カテゴリ内訳</h6>
-        <canvas id="categoryChart" height="200"></canvas>
+
+  <!-- カルーセル本体 -->
+  <div class="chart-carousel" id="chartCarousel">
+    <div class="chart-track" id="chartTrack">
+
+      <!-- Slide 0: 日別収支カレンダー -->
+      <div class="chart-slide">
+        <div class="slide-card p-3">
+          <h6 class="slide-title text-muted mb-2">日別収支</h6>
+          <div class="slide-body overflow-auto">
+            <div id="calendarView"></div>
+          </div>
+        </div>
       </div>
+
+      <!-- Slide 1: カテゴリ内訳 -->
+      <div class="chart-slide">
+        <div class="slide-card p-3">
+          <h6 class="slide-title text-muted mb-2">カテゴリ内訳</h6>
+          <div class="slide-body d-flex gap-3">
+            <div class="flex-1" style="flex:1;min-width:0;position:relative">
+              <div class="text-center small fw-bold mb-1 text-danger">支出</div>
+              <div id="expenseCategoryNoData" class="text-muted text-center py-4 small" style="display:none">データなし</div>
+              <div style="position:relative;height:calc(100% - 28px)">
+                <canvas id="expenseCategoryChart"></canvas>
+              </div>
+            </div>
+            <div class="vr"></div>
+            <div class="flex-1" style="flex:1;min-width:0;position:relative">
+              <div class="text-center small fw-bold mb-1 text-success">収入</div>
+              <div id="incomeCategoryNoData" class="text-muted text-center py-4 small" style="display:none">データなし</div>
+              <div style="position:relative;height:calc(100% - 28px)">
+                <canvas id="incomeCategoryChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Slide 2: 月別収支 -->
+      <div class="chart-slide">
+        <div class="slide-card p-3">
+          <h6 class="slide-title text-muted mb-2">月別収支（年間）</h6>
+          <div class="slide-body" style="position:relative">
+            <canvas id="monthlyChart"></canvas>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -81,11 +139,117 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+/* ---- カルーセル ---- */
+.chart-carousel {
+  overflow: hidden;
+  position: relative;
+}
+.chart-track {
+  display: flex;
+  align-items: flex-start;
+  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.chart-slide {
+  flex: 0 0 82%;
+  margin: 0 4%;
+  transition: transform 0.4s ease, opacity 0.4s ease;
+  transform: scale(0.92);
+  opacity: 0.55;
+}
+.chart-slide.active {
+  transform: scale(1);
+  opacity: 1;
+}
+.slide-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+  display: flex;
+  flex-direction: column;
+}
+.chart-slide.active .slide-card {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.14);
+}
+.slide-title {
+  flex: 0 0 auto;
+}
+.slide-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ---- タブ ---- */
+.slide-tab {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: 20px;
+  background: #e9ecef;
+  color: #6c757d;
+  font-size: 0.8rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.25s, color 0.25s;
+  white-space: nowrap;
+}
+.slide-tab.active {
+  background: #0d6efd;
+  color: #fff;
+}
+
+/* ---- カレンダー ---- */
+.calendar-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+}
+.calendar-table th {
+  padding: 4px 2px;
+  font-size: 0.72rem;
+  text-align: center;
+  border-bottom: 2px solid #dee2e6;
+}
+.calendar-cell {
+  border: 1px solid #f0f0f0;
+  vertical-align: top;
+  padding: 3px 4px;
+  height: 60px;
+}
+.calendar-cell.today {
+  background: #e8f4fd;
+}
+.calendar-cell.outside {
+  background: #f8f9fa;
+}
+.day-num {
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.day-income {
+  font-size: 0.62rem;
+  color: #198754;
+  line-height: 1.3;
+  word-break: break-all;
+}
+.day-expense {
+  font-size: 0.62rem;
+  color: #dc3545;
+  line-height: 1.3;
+  word-break: break-all;
+}
+.col-sun .day-num { color: #dc3545; }
+.col-sat .day-num { color: #0d6efd; }
+</style>
+
 <script>
 const fmt = (n) => `¥${n.toLocaleString()}`;
 let monthlyChart = null;
-let categoryChart = null;
+let expenseCategoryChart = null;
+let incomeCategoryChart = null;
+let activeSlide = 0;
 
+// === 年月の取得・設定 ===
 function getSelected() {
   return {
     year: parseInt(document.getElementById('yearSelect').value),
@@ -93,24 +257,104 @@ function getSelected() {
   };
 }
 
+function setSelected(year, month) {
+  if (month < 1) { month = 12; year--; }
+  if (month > 12) { month = 1; year++; }
+
+  const yearSel = document.getElementById('yearSelect');
+  const monthSel = document.getElementById('monthSelect');
+
+  if (!yearSel.querySelector(`option[value="${year}"]`)) {
+    const opt = new Option(`${year}年`, year);
+    if (year < parseInt(yearSel.options[0].value)) {
+      yearSel.prepend(opt);
+    } else {
+      yearSel.append(opt);
+    }
+  }
+  yearSel.value = year;
+  monthSel.value = month;
+  updateMonthLabel();
+  reload();
+}
+
+function updateMonthLabel() {
+  const { year, month } = getSelected();
+  document.getElementById('currentMonthLabel').textContent = `${year}年${month}月`;
+}
+
+// === カルーセル ===
+function updateCarousel() {
+  const carousel = document.getElementById('chartCarousel');
+  const track = document.getElementById('chartTrack');
+  const slides = track.querySelectorAll('.chart-slide');
+  const W = carousel.offsetWidth;
+  const slideW = W * 0.82;
+  const gap = W * 0.04;
+  const slotW = slideW + gap * 2;
+
+  const offset = W / 2 - (activeSlide * slotW + gap + slideW / 2);
+  track.style.transform = `translateX(${offset}px)`;
+
+  slides.forEach((s, i) => s.classList.toggle('active', i === activeSlide));
+  document.querySelectorAll('.slide-tab').forEach((t, i) => t.classList.toggle('active', i === activeSlide));
+}
+
+// スライド切り替え後に高さを揃える
+function equalizeHeights() {
+  const cards = document.querySelectorAll('.slide-card');
+  cards.forEach(c => c.style.height = '');
+  const maxH = Math.max(...[...cards].map(c => c.offsetHeight));
+  cards.forEach(c => c.style.height = `${maxH}px`);
+}
+
+function goToSlide(index) {
+  const count = document.querySelectorAll('.chart-slide').length;
+  activeSlide = Math.max(0, Math.min(count - 1, index));
+  updateCarousel();
+}
+
+document.getElementById('slidePrevBtn').addEventListener('click', () => goToSlide(activeSlide - 1));
+document.getElementById('slideNextBtn').addEventListener('click', () => goToSlide(activeSlide + 1));
+document.querySelectorAll('.slide-tab').forEach(tab => {
+  tab.addEventListener('click', () => goToSlide(parseInt(tab.dataset.slide)));
+});
+window.addEventListener('resize', () => { updateCarousel(); equalizeHeights(); });
+
+// === 月ナビゲーション ===
+document.getElementById('prevMonthBtn').addEventListener('click', () => {
+  const { year, month } = getSelected();
+  setSelected(year, month - 1);
+});
+document.getElementById('nextMonthBtn').addEventListener('click', () => {
+  const { year, month } = getSelected();
+  setSelected(year, month + 1);
+});
+document.getElementById('yearSelect').addEventListener('change', () => { updateMonthLabel(); reload(); });
+document.getElementById('monthSelect').addEventListener('change', () => { updateMonthLabel(); reload(); });
+
+// === API ローダー ===
 async function loadSummary() {
-  const {year, month} = getSelected();
+  const { year, month } = getSelected();
   const res = await fetch(`/api/summary?year=${year}&month=${month}`);
   const d = await res.json();
   document.getElementById('summaryIncome').textContent = fmt(d.income);
   document.getElementById('summaryExpense').textContent = fmt(d.expense);
   const balEl = document.getElementById('summaryBalance');
   balEl.textContent = fmt(d.balance);
-  balEl.className = `fs-3 fw-bold ${d.balance >= 0 ? 'text-success' : 'text-danger'}`;
+  balEl.className = `fs-5 fw-bold ${d.balance >= 0 ? 'text-success' : 'text-danger'}`;
 }
 
 async function loadMonthlyChart() {
-  const {year} = getSelected();
+  const { year, month } = getSelected();
   const res = await fetch(`/api/monthly_trend?year=${year}`);
   const data = await res.json();
   const labels = data.map(d => `${d.month}月`);
   const incomes = data.map(d => d.income);
   const expenses = data.map(d => d.expense);
+
+  const incomeBg = data.map(d => d.month === month ? 'rgba(89,161,79,1)' : 'rgba(89,161,79,0.4)');
+  const expenseBg = data.map(d => d.month === month ? 'rgba(225,87,89,1)' : 'rgba(225,87,89,0.4)');
 
   if (monthlyChart) monthlyChart.destroy();
   monthlyChart = new Chart(document.getElementById('monthlyChart'), {
@@ -118,47 +362,110 @@ async function loadMonthlyChart() {
     data: {
       labels,
       datasets: [
-        {label: '収入', data: incomes, backgroundColor: 'rgba(89,161,79,0.7)'},
-        {label: '支出', data: expenses, backgroundColor: 'rgba(225,87,89,0.7)'},
+        { label: '収入', data: incomes, backgroundColor: incomeBg },
+        { label: '支出', data: expenses, backgroundColor: expenseBg },
       ]
     },
     options: {
       responsive: true,
-      plugins: {legend: {position: 'top'}},
-      scales: {y: {ticks: {callback: v => `¥${v.toLocaleString()}`}}}
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: { y: { ticks: { callback: v => `¥${v.toLocaleString()}` } } }
     }
   });
 }
 
-async function loadCategoryChart() {
-  const {year, month} = getSelected();
-  const res = await fetch(`/api/category_breakdown?year=${year}&month=${month}&type=expense`);
-  const data = await res.json();
-
-  if (categoryChart) categoryChart.destroy();
+function buildCategoryChart(canvasId, noDataId, chartRef, data) {
+  if (chartRef) { chartRef.destroy(); chartRef = null; }
+  const noDataEl = document.getElementById(noDataId);
+  const canvas = document.getElementById(canvasId);
   if (data.length === 0) {
-    document.getElementById('categoryChart').closest('.card-body').innerHTML =
-      '<h6 class="card-title text-muted">支出カテゴリ内訳</h6><p class="text-muted text-center py-4">データなし</p>';
-    return;
+    noDataEl.style.display = '';
+    canvas.style.display = 'none';
+    return null;
   }
-  categoryChart = new Chart(document.getElementById('categoryChart'), {
+  noDataEl.style.display = 'none';
+  canvas.style.display = '';
+  return new Chart(canvas, {
     type: 'doughnut',
     data: {
       labels: data.map(d => d.name),
-      datasets: [{data: data.map(d => d.total), backgroundColor: data.map(d => d.color)}]
+      datasets: [{ data: data.map(d => d.total), backgroundColor: data.map(d => d.color) }]
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: {
-        legend: {position: 'bottom', labels: {boxWidth: 12}},
-        tooltip: {callbacks: {label: ctx => `${ctx.label}: ¥${ctx.raw.toLocaleString()}`}}
+        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 }, padding: 8 } },
+        tooltip: { callbacks: { label: ctx => `${ctx.label}: ¥${ctx.raw.toLocaleString()}` } }
       }
     }
   });
 }
 
+async function loadCategoryChart() {
+  const { year, month } = getSelected();
+  const [expRes, incRes] = await Promise.all([
+    fetch(`/api/category_breakdown?year=${year}&month=${month}&type=expense`),
+    fetch(`/api/category_breakdown?year=${year}&month=${month}&type=income`),
+  ]);
+  const [expData, incData] = await Promise.all([expRes.json(), incRes.json()]);
+
+  expenseCategoryChart = buildCategoryChart('expenseCategoryChart', 'expenseCategoryNoData', expenseCategoryChart, expData);
+  incomeCategoryChart = buildCategoryChart('incomeCategoryChart', 'incomeCategoryNoData', incomeCategoryChart, incData);
+}
+
+async function loadCalendar() {
+  const { year, month } = getSelected();
+  const res = await fetch(`/api/daily_breakdown?year=${year}&month=${month}`);
+  const data = await res.json();
+
+  const today = new Date();
+  const firstDay = new Date(year, month - 1, 1).getDay();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const dowClasses = ['col-sun', '', '', '', '', '', 'col-sat'];
+  const dowLabels = ['日', '月', '火', '水', '木', '金', '土'];
+  const dowLabelColors = ['text-danger', 'text-dark', 'text-dark', 'text-dark', 'text-dark', 'text-dark', 'text-primary'];
+
+  let html = '<table class="calendar-table"><thead><tr>';
+  dowLabels.forEach((d, i) => {
+    html += `<th class="${dowLabelColors[i]}">${d}</th>`;
+  });
+  html += '</tr></thead><tbody><tr>';
+
+  let col = 0;
+  for (let i = 0; i < firstDay; i++) {
+    html += '<td class="calendar-cell outside"></td>';
+    col++;
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dow = (firstDay + day - 1) % 7;
+    const d = data[day] || { income: 0, expense: 0 };
+    const isToday = today.getFullYear() === year && (today.getMonth() + 1) === month && today.getDate() === day;
+
+    html += `<td class="calendar-cell ${isToday ? 'today' : ''} ${dowClasses[dow]}">
+      <div class="day-num${isToday ? ' fw-bold text-decoration-underline' : ''}">${day}</div>
+      ${d.income > 0 ? `<div class="day-income">+¥${d.income.toLocaleString()}</div>` : ''}
+      ${d.expense > 0 ? `<div class="day-expense">-¥${d.expense.toLocaleString()}</div>` : ''}
+    </td>`;
+    col++;
+    if (col % 7 === 0 && day < daysInMonth) {
+      html += '</tr><tr>';
+    }
+  }
+
+  const remaining = (7 - (col % 7)) % 7;
+  for (let i = 0; i < remaining; i++) {
+    html += '<td class="calendar-cell outside"></td>';
+  }
+
+  html += '</tr></tbody></table>';
+  document.getElementById('calendarView').innerHTML = html;
+}
+
 async function loadRecentTransactions() {
-  const {year, month} = getSelected();
+  const { year, month } = getSelected();
   const res = await fetch(`/api/transactions?year=${year}&month=${month}&limit=10`);
   const data = await res.json();
   const el = document.getElementById('recentTransactions');
@@ -184,12 +491,20 @@ async function loadRecentTransactions() {
 }
 
 async function reload() {
-  await Promise.all([loadSummary(), loadMonthlyChart(), loadCategoryChart(), loadRecentTransactions()]);
+  await Promise.all([
+    loadSummary(),
+    loadMonthlyChart(),
+    loadCategoryChart(),
+    loadCalendar(),
+    loadRecentTransactions(),
+  ]);
+  // 全スライドの高さをカレンダーに合わせて揃える
+  equalizeHeights();
 }
 
-document.getElementById('yearSelect').addEventListener('change', reload);
-document.getElementById('monthSelect').addEventListener('change', reload);
-
+// 初期化
+updateMonthLabel();
+requestAnimationFrame(() => { updateCarousel(); });
 reload();
 </script>
 {% endblock %}

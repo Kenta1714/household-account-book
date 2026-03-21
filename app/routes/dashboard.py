@@ -75,6 +75,30 @@ def monthly_trend():
     ])
 
 
+@bp.route("/api/daily_breakdown")
+def daily_breakdown():
+    year = request.args.get("year", date.today().year, type=int)
+    month = request.args.get("month", date.today().month, type=int)
+
+    rows = db.session.query(
+        extract("day", Transaction.date).label("day"),
+        Transaction.type,
+        func.sum(Transaction.amount).label("total"),
+    ).filter(
+        extract("year", Transaction.date) == year,
+        extract("month", Transaction.date) == month,
+    ).group_by("day", Transaction.type).all()
+
+    result = {}
+    for row in rows:
+        d = int(row.day)
+        if d not in result:
+            result[d] = {"income": 0, "expense": 0}
+        result[d][row.type] = int(row.total)
+
+    return jsonify(result)
+
+
 @bp.route("/api/category_breakdown")
 def category_breakdown():
     year = request.args.get("year", date.today().year, type=int)

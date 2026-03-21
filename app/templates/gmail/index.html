@@ -4,6 +4,14 @@
 {% block content %}
 <h4 class="mb-4"><i class="bi bi-envelope"></i> Gmail連携</h4>
 
+<!-- スキャン中オーバーレイ -->
+<div id="scanOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:12px">
+  <div class="spinner-border text-light" style="width:3rem;height:3rem"></div>
+  <div class="text-white fw-bold fs-5">スキャン中...</div>
+  <div id="scanProgressText" class="text-white fs-6">0件検出 / 0件追加</div>
+  <div class="text-white-50 small">しばらくお待ちください</div>
+</div>
+
 <!-- 認証状態 -->
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-body d-flex justify-content-between align-items-center">
@@ -21,16 +29,16 @@
       </a>
     {% else %}
       <div class="d-flex gap-2">
-        <form method="post" action="{{ url_for('gmail.scan') }}">
+        <form method="post" action="{{ url_for('gmail.scan') }}" class="scan-form">
           <input type="hidden" name="batch" value="0">
-          <button type="submit" class="btn btn-outline-primary btn-sm">
-            <i class="bi bi-arrow-clockwise"></i> 今すぐスキャン（未読）
+          <button type="submit" class="btn btn-outline-primary btn-sm scan-btn">
+            <i class="bi bi-arrow-clockwise"></i> 今すぐスキャン（前回以降）
           </button>
         </form>
-        <form method="post" action="{{ url_for('gmail.scan') }}"
+        <form method="post" action="{{ url_for('gmail.scan') }}" class="scan-form"
               onsubmit="return confirm('過去のメールをすべてスキャンします。時間がかかる場合があります。続けますか？')">
           <input type="hidden" name="batch" value="1">
-          <button type="submit" class="btn btn-outline-warning btn-sm">
+          <button type="submit" class="btn btn-outline-warning btn-sm scan-btn">
             <i class="bi bi-inbox"></i> 一括取り込み（全件）
           </button>
         </form>
@@ -54,8 +62,8 @@
         <tr>
           <th>会社名</th>
           <th>送信元</th>
-          <th>金額前テキスト</th>
-          <th>金額後テキスト</th>
+          <th>金額（前/後）</th>
+          <th>ご利用内容（前/後）</th>
           <th>デフォルトカテゴリ</th>
           <th></th>
         </tr>
@@ -65,8 +73,14 @@
         <tr>
           <td>{{ fmt.company_name }}</td>
           <td><small class="text-muted">{{ fmt.sender_email }}</small></td>
-          <td><code>{{ fmt.amount_prefix }}</code></td>
-          <td><code>{{ fmt.amount_suffix }}</code></td>
+          <td><code>{{ fmt.amount_prefix }}</code> / <code>{{ fmt.amount_suffix }}</code></td>
+          <td>
+            {% if fmt.content_prefix %}
+              <code>{{ fmt.content_prefix }}</code> / <code>{{ fmt.content_suffix }}</code>
+            {% else %}
+              <span class="text-muted small">未設定</span>
+            {% endif %}
+          </td>
           <td>{{ fmt.default_category.name if fmt.default_category else '-' }}</td>
           <td>
             <form method="post" action="{{ url_for('gmail.format_delete', fmt_id=fmt.id) }}"
@@ -93,7 +107,7 @@
   <div class="table-responsive">
     <table class="table mb-0">
       <thead class="table-light">
-        <tr><th>実行日時</th><th>検出</th><th>追加</th><th>スキップ</th></tr>
+        <tr><th>実行日時</th><th>検出</th><th>追加</th><th>スキップ内訳</th><th></th></tr>
       </thead>
       <tbody>
         {% for log in logs %}
@@ -101,7 +115,15 @@
           <td>{{ log.scanned_at.strftime('%Y/%m/%d %H:%M') }}</td>
           <td>{{ log.total_found }}</td>
           <td class="text-success fw-bold">{{ log.added }}</td>
-          <td class="text-muted">{{ log.skipped }}</td>
+          <td class="text-muted small">{{ log.detail or '-' }}</td>
+          <td>
+            {% if loop.first and log.skipped > 0 %}
+            <button class="btn btn-outline-secondary btn-sm py-0"
+                    data-bs-toggle="modal" data-bs-target="#skipDetailModal">
+              <i class="bi bi-search"></i> 詳細
+            </button>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -110,6 +132,21 @@
   {% else %}
   <div class="card-body text-muted">履歴なし</div>
   {% endif %}
+</div>
+
+<!-- スキップ詳細モーダル -->
+<div class="modal fade" id="skipDetailModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-search"></i> スキップされたメールの詳細（最新スキャン）</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="skipDetailBody">
+        <div class="text-center text-muted py-4">読み込み中...</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- フォーマット追加モーダル -->
@@ -133,27 +170,48 @@
             </div>
             <div class="col-12">
               <label class="form-label">サンプルメール本文</label>
-              <textarea id="sampleText" name="sample_text" class="form-control font-monospace" rows="5"
+              <textarea id="sampleText" name="sample_text" class="form-control font-monospace" rows="6"
                         placeholder="カード会社から届いたメールの本文をここに貼り付けてください"></textarea>
             </div>
+
+            <!-- 金額抽出 -->
+            <div class="col-12"><hr class="my-1"><p class="mb-1 fw-bold small text-muted">金額の抽出</p></div>
             <div class="col-md-5">
               <label class="form-label">金額直前のテキスト</label>
-              <input type="text" id="prefixInput" name="amount_prefix" class="form-control"
+              <input type="text" id="amountPrefix" name="amount_prefix" class="form-control"
                      placeholder="例: ご利用金額：" required>
             </div>
             <div class="col-md-5">
               <label class="form-label">金額直後のテキスト</label>
-              <input type="text" id="suffixInput" name="amount_suffix" class="form-control"
+              <input type="text" id="amountSuffix" name="amount_suffix" class="form-control"
                      placeholder="例: 円" required>
             </div>
             <div class="col-md-2 d-flex align-items-end">
-              <button type="button" class="btn btn-outline-secondary w-100" id="previewBtn">
-                確認
-              </button>
+              <button type="button" class="btn btn-outline-secondary w-100" id="previewAmountBtn">確認</button>
             </div>
-            <div class="col-12" id="previewResult" style="display:none">
-              <div class="alert mb-0" id="previewAlert"></div>
+            <div class="col-12" id="previewAmountResult" style="display:none">
+              <div class="alert mb-0" id="previewAmountAlert"></div>
             </div>
+
+            <!-- ご利用内容抽出 -->
+            <div class="col-12"><hr class="my-1"><p class="mb-1 fw-bold small text-muted">ご利用内容の抽出（任意）</p></div>
+            <div class="col-md-5">
+              <label class="form-label">内容直前のテキスト</label>
+              <input type="text" id="contentPrefix" name="content_prefix" class="form-control"
+                     placeholder="例: ご利用店名：">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">内容直後のテキスト</label>
+              <input type="text" id="contentSuffix" name="content_suffix" class="form-control"
+                     placeholder="例: （改行など）">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+              <button type="button" class="btn btn-outline-secondary w-100" id="previewContentBtn">確認</button>
+            </div>
+            <div class="col-12" id="previewContentResult" style="display:none">
+              <div class="alert mb-0" id="previewContentAlert"></div>
+            </div>
+
             <div class="col-md-6">
               <label class="form-label">デフォルトカテゴリ（任意）</label>
               <select name="default_category_id" class="form-select">
@@ -176,27 +234,159 @@
 
 {% block scripts %}
 <script>
-document.getElementById('previewBtn').addEventListener('click', async () => {
-  const body = document.getElementById('sampleText').value;
-  const prefix = document.getElementById('prefixInput').value;
-  const suffix = document.getElementById('suffixInput').value;
+// スキャン: AJAXでバックグラウンド実行 → 進捗ポーリング
+let _pollTimer = null;
 
+function startProgressPolling() {
+  const progressText = document.getElementById('scanProgressText');
+  _pollTimer = setInterval(async () => {
+    try {
+      const res = await fetch('/gmail/scan/progress');
+      const p = await res.json();
+      progressText.textContent = `${p.total_found}件検出 / ${p.added}件追加`;
+      if (p.done) {
+        clearInterval(_pollTimer);
+        if (p.error) {
+          document.getElementById('scanOverlay').style.display = 'none';
+          alert('エラー: ' + p.error);
+        } else {
+          // ページをリロードしてフラッシュメッセージの代わりにURLパラメータで結果表示
+          const r = p.result || {};
+          location.href = '/gmail/?scan_done=1&added=' + (r.added || 0) + '&skipped=' + (r.skipped || 0);
+        }
+      }
+    } catch (_) {}
+  }, 1000);
+}
+
+document.querySelectorAll('.scan-form').forEach(form => {
+  form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const batch = form.querySelector('input[name="batch"]').value;
+    const overlay = document.getElementById('scanOverlay');
+    document.getElementById('scanProgressText').textContent = '0件検出 / 0件追加';
+
+    const res = await fetch('/gmail/scan', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'batch=' + batch,
+    });
+    if (res.status === 409) {
+      alert('現在スキャン中です。完了までお待ちください。');
+      return;
+    }
+    overlay.style.display = 'flex';
+    document.querySelectorAll('.scan-btn').forEach(btn => btn.disabled = true);
+    startProgressPolling();
+  });
+});
+
+// スキャン完了後のURL結果表示
+(function() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('scan_done')) {
+    const added = params.get('added') || 0;
+    const skipped = params.get('skipped') || 0;
+    const div = document.createElement('div');
+    div.className = 'alert alert-success alert-dismissible fade show';
+    div.innerHTML = `スキャン完了: ${added}件追加, ${skipped}件スキップ
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+    document.querySelector('.container-fluid').prepend(div);
+    history.replaceState({}, '', '/gmail/');
+  }
+})();
+
+// プレビュー共通関数
+async function previewExtraction(mode, prefix, suffix, resultId, alertId) {
+  const body = document.getElementById('sampleText').value;
+  if (!body || !prefix || !suffix) {
+    alert('サンプル本文と前後テキストを入力してください');
+    return;
+  }
   const res = await fetch('/gmail/formats/preview', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({body, prefix, suffix}),
+    body: JSON.stringify({body, prefix, suffix, mode}),
   });
   const d = await res.json();
-  const el = document.getElementById('previewResult');
-  const alert = document.getElementById('previewAlert');
-  el.style.display = '';
+  document.getElementById(resultId).style.display = '';
+  const alert = document.getElementById(alertId);
   if (d.success) {
+    const val = mode === 'amount' ? `¥${d.value.toLocaleString()}` : d.value;
     alert.className = 'alert alert-success mb-0';
-    alert.textContent = `抽出成功: ¥${d.amount.toLocaleString()} (マッチ: "${d.matched}")`;
+    alert.textContent = `抽出成功: ${val}  （マッチ: "${d.matched}"）`;
   } else {
     alert.className = 'alert alert-danger mb-0';
-    alert.textContent = '金額を抽出できませんでした。前後テキストを確認してください。';
+    alert.textContent = '抽出できませんでした。前後テキストを確認してください。';
   }
+}
+
+document.getElementById('previewAmountBtn').addEventListener('click', () => {
+  previewExtraction(
+    'amount',
+    document.getElementById('amountPrefix').value,
+    document.getElementById('amountSuffix').value,
+    'previewAmountResult', 'previewAmountAlert'
+  );
 });
+
+document.getElementById('previewContentBtn').addEventListener('click', () => {
+  previewExtraction(
+    'content',
+    document.getElementById('contentPrefix').value,
+    document.getElementById('contentSuffix').value,
+    'previewContentResult', 'previewContentAlert'
+  );
+});
+
+// スキップ詳細モーダル
+document.getElementById('skipDetailModal').addEventListener('show.bs.modal', async () => {
+  const body = document.getElementById('skipDetailBody');
+  body.innerHTML = '<div class="text-center text-muted py-4">読み込み中...</div>';
+
+  const res = await fetch('/gmail/scan/skip_details');
+  const data = await res.json();
+
+  // 重複は除外して表示
+  const filtered = data.filter(d => d.reason !== 'duplicate');
+
+  if (!filtered.length) {
+    body.innerHTML = '<p class="text-muted text-center py-4">表示対象のスキップメールはありません</p>';
+    return;
+  }
+
+  const reasonBadge = {
+    duplicate:  'bg-secondary',
+    no_format:  'bg-warning text-dark',
+    no_amount:  'bg-danger',
+  };
+
+  body.innerHTML = filtered.map((d, i) => `
+    <div class="border rounded mb-3 overflow-hidden">
+      <div class="d-flex justify-content-between align-items-center px-3 py-2 bg-light">
+        <div>
+          <span class="badge ${reasonBadge[d.reason] || 'bg-secondary'} me-2">${d.reason_label}</span>
+          <strong class="small">${escHtml(d.subject) || '（件名なし）'}</strong>
+          ${d.extra_info ? `<span class="text-muted small ms-2">対象フォーマット: ${escHtml(d.extra_info)}</span>` : ''}
+        </div>
+        <button class="btn btn-link btn-sm py-0 text-muted" data-bs-toggle="collapse"
+                data-bs-target="#skipBody${i}">本文 ▾</button>
+      </div>
+      <div class="px-3 py-1 border-bottom">
+        <small class="text-muted">
+          送信元: ${escHtml(d.sender) || '-'} &nbsp;|&nbsp; 日時: ${escHtml(d.date_str) || '-'}
+        </small>
+      </div>
+      <div id="skipBody${i}" class="collapse">
+        <pre class="m-0 p-3 bg-white" style="font-size:0.78rem;white-space:pre-wrap;max-height:300px;overflow-y:auto">${escHtml(d.body) || '（本文なし）'}</pre>
+      </div>
+    </div>
+  `).join('');
+});
+
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 </script>
 {% endblock %}
