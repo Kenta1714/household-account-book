@@ -35,7 +35,7 @@ def _apply_basic_auth(app):
             return Response(
                 "このアプリへのアクセスには認証が必要です",
                 401,
-                {"WWW-Authenticate": 'Basic realm="家計簿アプリ"'},
+                {"WWW-Authenticate": 'Basic realm="kakeibo"'},
             )
 
 
@@ -60,7 +60,6 @@ def create_app():
 
     # Gmail定期スキャン（30分ごと）
     # Flaskのdebugリローダーが起動する子プロセスではスケジューラを起動しない
-    import os
     if not scheduler.running and os.environ.get("WERKZEUG_RUN_MAIN") != "false":
         from app.services import gmail_service as gs
         from app.services.gmail_service import scan_emails
@@ -77,10 +76,18 @@ def create_app():
 
 
 def _migrate_db():
-    """既存DBに新カラムを追加する（SQLite用の簡易マイグレーション）"""
-    migrations = [
-        "ALTER TABLE transactions ADD COLUMN source_detail VARCHAR(200)",
-    ]
+    """既存DBに新カラムを追加する簡易マイグレーション（PostgreSQL / SQLite 両対応）"""
+    # PostgreSQL では "IF NOT EXISTS" が使える（9.6+）
+    # SQLite は IF NOT EXISTS に非対応なので try/except でエラーを無視する
+    is_postgres = db.engine.url.get_backend_name() == "postgresql"
+    if is_postgres:
+        migrations = [
+            "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS source_detail VARCHAR(200)",
+        ]
+    else:
+        migrations = [
+            "ALTER TABLE transactions ADD COLUMN source_detail VARCHAR(200)",
+        ]
     for sql in migrations:
         try:
             db.session.execute(db.text(sql))
