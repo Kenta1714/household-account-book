@@ -39,12 +39,16 @@ def _load_and_delete_verifier() -> str | None:
 def index():
     authenticated = gmail_service.is_authenticated()
     formats = EmailFormat.query.order_by(EmailFormat.company_name).all()
-    logs = ScanLog.query.filter_by(source="gmail").order_by(ScanLog.scanned_at.desc()).limit(10).all()
+    manual_logs = (ScanLog.query.filter_by(source="gmail", trigger="manual")
+                   .order_by(ScanLog.scanned_at.desc()).limit(5).all())
+    auto_logs = (ScanLog.query.filter_by(source="gmail", trigger="auto")
+                 .order_by(ScanLog.scanned_at.desc()).limit(5).all())
     categories = Category.query.order_by(Category.name).all()
     return render_template("gmail/index.html",
                            authenticated=authenticated,
                            formats=formats,
-                           logs=logs,
+                           manual_logs=manual_logs,
+                           auto_logs=auto_logs,
                            categories=categories)
 
 
@@ -88,7 +92,7 @@ def scan():
 
     def run():
         with app.app_context():
-            gmail_service.scan_emails(batch=batch)
+            gmail_service.scan_emails(batch=batch, trigger="manual")
 
     Thread(target=run, daemon=True).start()
     return jsonify({"started": True})

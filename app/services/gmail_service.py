@@ -134,11 +134,11 @@ def _get_header(headers: list, name: str) -> str:
     return ""
 
 
-def scan_emails(batch: bool = False) -> dict:
+def scan_emails(batch: bool = False, trigger: str = "auto") -> dict:
     _update_progress(running=True, batch=batch, total_found=0, added=0,
                      done=False, error=None, result=None)
     try:
-        result = _do_scan(batch)
+        result = _do_scan(batch, trigger=trigger)
     except Exception as e:
         _update_progress(running=False, done=True, error=str(e))
         raise
@@ -147,7 +147,7 @@ def scan_emails(batch: bool = False) -> dict:
     return result
 
 
-def _do_scan(batch: bool) -> dict:
+def _do_scan(batch: bool, trigger: str = "auto") -> dict:
     service = get_gmail_service()
     formats = EmailFormat.query.all()
     if not formats:
@@ -272,6 +272,7 @@ def _do_scan(batch: bool) -> dict:
     )
     log = ScanLog(
         source="gmail",
+        trigger=trigger,
         total_found=total_found,
         added=added,
         skipped=skipped,

@@ -113,16 +113,16 @@
 </div>
 
 <!-- スキャン履歴 -->
-<div class="card border-0 shadow-sm">
-  <div class="card-header bg-transparent fw-bold">スキャン履歴</div>
-  {% if logs %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-transparent fw-bold">スキャン履歴（手動）</div>
+  {% if manual_logs %}
   <div class="table-responsive">
     <table class="table mb-0">
       <thead class="table-light">
         <tr><th>実行日時</th><th>検出</th><th>追加</th><th>スキップ内訳</th><th></th></tr>
       </thead>
       <tbody>
-        {% for log in logs %}
+        {% for log in manual_logs %}
         <tr>
           <td>{{ log.scanned_at.strftime('%Y/%m/%d %H:%M') }}</td>
           <td>{{ log.total_found }}</td>
@@ -136,6 +136,31 @@
             </button>
             {% endif %}
           </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-muted">履歴なし</div>
+  {% endif %}
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-transparent fw-bold">スキャン履歴（自動）</div>
+  {% if auto_logs %}
+  <div class="table-responsive">
+    <table class="table mb-0">
+      <thead class="table-light">
+        <tr><th>実行日時</th><th>検出</th><th>追加</th><th>スキップ内訳</th></tr>
+      </thead>
+      <tbody>
+        {% for log in auto_logs %}
+        <tr>
+          <td>{{ log.scanned_at.strftime('%Y/%m/%d %H:%M') }}</td>
+          <td>{{ log.total_found }}</td>
+          <td class="text-success fw-bold">{{ log.added }}</td>
+          <td class="text-muted small">{{ log.detail or '-' }}</td>
         </tr>
         {% endfor %}
       </tbody>

@@ -87,6 +87,7 @@ def _migrate_db():
             "ALTER TABLE email_formats ADD COLUMN IF NOT EXISTS card_name_prefix VARCHAR(255)",
             "ALTER TABLE email_formats ADD COLUMN IF NOT EXISTS card_name_suffix VARCHAR(255)",
             "ALTER TABLE email_formats ADD COLUMN IF NOT EXISTS card_name_keywords TEXT",
+            "ALTER TABLE scan_logs ADD COLUMN IF NOT EXISTS trigger VARCHAR(10)",
         ]
     else:
         migrations = [
@@ -95,6 +96,7 @@ def _migrate_db():
             "ALTER TABLE email_formats ADD COLUMN card_name_prefix VARCHAR(255)",
             "ALTER TABLE email_formats ADD COLUMN card_name_suffix VARCHAR(255)",
             "ALTER TABLE email_formats ADD COLUMN card_name_keywords TEXT",
+            "ALTER TABLE scan_logs ADD COLUMN trigger VARCHAR(10)",
         ]
     for sql in migrations:
         try:
