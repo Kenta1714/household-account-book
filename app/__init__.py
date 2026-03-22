@@ -75,10 +75,13 @@ def create_app():
                 if gs.is_authenticated():
                     scan_emails(batch=False)
 
-        with app.app_context():
-            from app.models import Setting
-            s = Setting.query.get("scan_interval_minutes")
-            interval_minutes = int(s.value) if s else 30
+        try:
+            with app.app_context():
+                from app.models import Setting
+                s = Setting.query.get("scan_interval_minutes")
+                interval_minutes = int(s.value) if s else 30
+        except Exception:
+            interval_minutes = 30
 
         scheduler.add_job(scheduled_gmail_scan, "interval", minutes=interval_minutes, id="gmail_scan")
         scheduler.start()
@@ -115,6 +118,7 @@ def _migrate_db():
             db.session.commit()
         except Exception:
             db.session.rollback()
+    db.session.remove()  # マイグレーション後のセッションを確実にクリーンにする
 
 
 def _seed_categories():
