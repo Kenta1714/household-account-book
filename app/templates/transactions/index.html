@@ -64,10 +64,8 @@
     <table class="table table-hover mb-0">
       <thead class="table-light">
         <tr>
-          <th>日付</th>
-          <th>内容</th>
+          <th>取引</th>
           <th>メモ</th>
-          <th>カテゴリ</th>
           <th>ソース</th>
           <th class="text-end">金額</th>
           <th></th>
@@ -76,16 +74,18 @@
       <tbody>
         {% for tx in transactions %}
         <tr>
-          <td class="text-nowrap">{{ tx.date }}</td>
-          <td>{{ tx.description }}</td>
-          <td class="text-muted small">{{ tx.memo or '' }}</td>
           <td>
-            {% if tx.category %}
-              <span class="badge rounded-pill" style="background:{{ tx.category.color }}">{{ tx.category.name }}</span>
-            {% else %}
-              <span class="text-muted small">未分類</span>
-            {% endif %}
+            <div>
+              {% if tx.category %}
+                <span class="badge rounded-pill" style="background:{{ tx.category.color }}">{{ tx.category.name }}</span>
+              {% else %}
+                <span class="text-muted small">未分類</span>
+              {% endif %}
+              <small class="text-muted ms-1">{{ tx.date }}</small>
+            </div>
+            <div>{{ tx.description }}</div>
           </td>
+          <td class="text-muted small">{{ tx.memo or '' }}</td>
           <td class="text-nowrap">
             {% if tx.source == 'gmail' %}
               <span class="badge bg-info text-dark">Gmail</span>
@@ -114,7 +114,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="text-center text-muted py-4">データがありません</td></tr>
+        <tr><td colspan="5" class="text-center text-muted py-4">データがありません</td></tr>
         {% endfor %}
       </tbody>
     </table>

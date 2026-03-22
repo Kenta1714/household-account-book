@@ -29,7 +29,7 @@
 
 <!-- サマリーカード -->
 <div class="row g-3 mb-2 justify-content-center">
-  <div class="col-4">
+  <div class="col-6 col-sm-4">
     <div class="card border-0 shadow-sm">
       <div class="card-body py-2 d-flex justify-content-between align-items-center">
         <div class="text-muted small">収入</div>
@@ -37,7 +37,7 @@
       </div>
     </div>
   </div>
-  <div class="col-4">
+  <div class="col-6 col-sm-4">
     <div class="card border-0 shadow-sm">
       <div class="card-body py-2 d-flex justify-content-between align-items-center">
         <div class="text-muted small">支出</div>
@@ -47,7 +47,7 @@
   </div>
 </div>
 <div class="row g-3 mb-4 justify-content-center">
-  <div class="col-8">
+  <div class="col-12 col-sm-8">
     <div class="card border-0 shadow-sm">
       <div class="card-body py-2 d-flex justify-content-between align-items-center">
         <div class="text-muted small">収支</div>
@@ -231,13 +231,25 @@
   font-size: 0.62rem;
   color: #198754;
   line-height: 1.3;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-align: right;
+  height: 1.3em;
 }
 .day-expense {
   font-size: 0.62rem;
   color: #dc3545;
   line-height: 1.3;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-align: right;
+  height: 1.3em;
+}
+@media (max-width: 575.98px) {
+  .chart-slide {
+    flex: 0 0 92%;
+    margin: 0 2%;
+  }
 }
 .col-sun .day-num { color: #dc3545; }
 .col-sat .day-num { color: #0d6efd; }
@@ -316,11 +328,14 @@ function updateCarousel() {
   const track = document.getElementById('chartTrack');
   const slides = track.querySelectorAll('.chart-slide');
   const W = carousel.offsetWidth;
-  const slideW = W * 0.82;
-  const gap = W * 0.04;
-  const slotW = slideW + gap * 2;
+  const firstSlide = slides[0];
+  const slideW = firstSlide.offsetWidth;
+  const style = getComputedStyle(firstSlide);
+  const marginLeft = parseFloat(style.marginLeft);
+  const marginRight = parseFloat(style.marginRight);
+  const slotW = slideW + marginLeft + marginRight;
 
-  const offset = W / 2 - (activeSlide * slotW + gap + slideW / 2);
+  const offset = W / 2 - (activeSlide * slotW + marginLeft + slideW / 2);
   track.style.transform = `translateX(${offset}px)`;
 
   slides.forEach((s, i) => s.classList.toggle('active', i === activeSlide));
@@ -480,8 +495,8 @@ async function loadCalendar() {
     html += `<td class="calendar-cell ${isToday ? 'today' : ''} ${dowClasses[dow]}${hasData ? ' clickable' : ''}"
       ${hasData ? `onclick="scrollToDate(${day})"` : ''}>
       <div class="day-num${isToday ? ' fw-bold text-decoration-underline' : ''}">${day}</div>
-      ${d.income > 0 ? `<div class="day-income">+¥${d.income.toLocaleString()}</div>` : ''}
-      ${d.expense > 0 ? `<div class="day-expense">-¥${d.expense.toLocaleString()}</div>` : ''}
+      <div class="day-income">${d.income > 0 ? `+¥${d.income.toLocaleString()}` : ''}</div>
+      <div class="day-expense">${d.expense > 0 ? `-¥${d.expense.toLocaleString()}` : ''}</div>
     </td>`;
     col++;
     if (col % 7 === 0 && day < daysInMonth) {
@@ -510,13 +525,15 @@ async function loadRecentTransactions() {
   el.innerHTML = `<div class="list-group list-group-flush">${
     data.map(t => `
       <div class="list-group-item px-0" data-date="${t.date}">
-        <div class="d-flex justify-content-between align-items-center">
+        <div class="d-flex justify-content-between align-items-start">
           <div>
-            <span class="badge rounded-pill me-1" style="background:${escHtml(t.category_color || '#adb5bd')}">${escHtml(t.category_name || '未分類')}</span>
-            ${escHtml(t.description)}
-            <small class="text-muted ms-1">${t.date}</small>
+            <div>
+              <span class="badge rounded-pill me-1" style="background:${escHtml(t.category_color || '#adb5bd')}">${escHtml(t.category_name || '未分類')}</span>
+              <small class="text-muted">${t.date}</small>
+            </div>
+            <div>${escHtml(t.description)}</div>
           </div>
-          <div class="fw-bold ${t.type === 'income' ? 'text-success' : 'text-danger'}">
+          <div class="fw-bold ${t.type === 'income' ? 'text-success' : 'text-danger'} ms-2 text-nowrap">
             ${t.type === 'income' ? '+' : '-'}¥${t.amount.toLocaleString()}
           </div>
         </div>
