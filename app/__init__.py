@@ -30,6 +30,8 @@ def _apply_basic_auth(app):
 
     @app.before_request
     def require_auth():
+        if request.path == "/ping":
+            return  # スリープ対策用エンドポイントは認証不要
         auth = request.authorization
         if not auth or auth.username != username or auth.password != password:
             return Response(
@@ -53,12 +55,16 @@ def create_app():
     app.register_blueprint(gmail.bp)
     app.register_blueprint(paypay.bp)
 
+    @app.route("/ping")
+    def ping():
+        return "ok", 200
+
     with app.app_context():
         db.create_all()
         _migrate_db()
         _seed_categories()
 
-    # Gmail定期スキャン（30分ごと）
+    # Gmail定期スキャン（間隔はDBのscan_interval_minutes設定値、デフォルト30分）
     # Flaskのdebugリローダーが起動する子プロセスではスケジューラを起動しない
     if not scheduler.running and os.environ.get("WERKZEUG_RUN_MAIN") != "false":
         from app.services import gmail_service as gs
@@ -69,7 +75,12 @@ def create_app():
                 if gs.is_authenticated():
                     scan_emails(batch=False)
 
-        scheduler.add_job(scheduled_gmail_scan, "interval", minutes=30, id="gmail_scan")
+        with app.app_context():
+            from app.models import Setting
+            s = Setting.query.get("scan_interval_minutes")
+            interval_minutes = int(s.value) if s else 30
+
+        scheduler.add_job(scheduled_gmail_scan, "interval", minutes=interval_minutes, id="gmail_scan")
         scheduler.start()
 
     return app

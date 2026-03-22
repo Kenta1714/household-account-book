@@ -35,6 +35,15 @@ def _load_and_delete_verifier() -> str | None:
     return session.pop("pkce_verifier", None)
 
 
+VALID_SCAN_INTERVALS = {15: "15分", 30: "30分", 60: "1時間", 1440: "1日"}
+
+
+def _get_scan_interval_minutes() -> int:
+    from app.models import Setting
+    s = Setting.query.get("scan_interval_minutes")
+    return int(s.value) if s else 30
+
+
 @bp.route("/")
 def index():
     authenticated = gmail_service.is_authenticated()
@@ -44,12 +53,15 @@ def index():
     auto_logs = (ScanLog.query.filter_by(source="gmail", trigger="auto")
                  .order_by(ScanLog.scanned_at.desc()).limit(5).all())
     categories = Category.query.order_by(Category.name).all()
+    scan_interval = _get_scan_interval_minutes()
     return render_template("gmail/index.html",
                            authenticated=authenticated,
                            formats=formats,
                            manual_logs=manual_logs,
                            auto_logs=auto_logs,
-                           categories=categories)
+                           categories=categories,
+                           scan_interval=scan_interval,
+                           valid_scan_intervals=VALID_SCAN_INTERVALS)
 
 
 @bp.route("/auth")
@@ -158,6 +170,34 @@ def scan_skip_details():
         "body": d.body or "",
         "extra_info": d.extra_info or "",
     } for d in details])
+
+
+@bp.route("/scan/interval", methods=["GET"])
+def get_scan_interval():
+    return jsonify({"minutes": _get_scan_interval_minutes()})
+
+
+@bp.route("/scan/interval", methods=["POST"])
+def set_scan_interval():
+    from app.models import Setting
+    from app.extensions import scheduler
+    minutes = request.json.get("minutes")
+    if minutes not in VALID_SCAN_INTERVALS:
+        return jsonify({"error": "無効な値です"}), 400
+
+    s = Setting.query.get("scan_interval_minutes")
+    if s:
+        s.value = str(minutes)
+    else:
+        db.session.add(Setting(key="scan_interval_minutes", value=str(minutes)))
+    db.session.commit()
+
+    try:
+        scheduler.reschedule_job("gmail_scan", trigger="interval", minutes=minutes)
+    except Exception:
+        pass  # スケジューラが未起動の場合（テスト環境等）は無視
+
+    return jsonify({"minutes": minutes, "label": VALID_SCAN_INTERVALS[minutes]})
 
 
 @bp.route("/formats/preview", methods=["POST"])
