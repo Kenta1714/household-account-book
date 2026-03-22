@@ -487,8 +487,8 @@ async function loadCalendar() {
     html += `<td class="calendar-cell ${isToday ? 'today' : ''} ${dowClasses[dow]}${hasData ? ' clickable' : ''}"
       ${hasData ? `onclick="scrollToDate(${day})"` : ''}>
       <div class="day-num${isToday ? ' fw-bold text-decoration-underline' : ''}">${day}</div>
-      <div class="day-income">${d.income > 0 ? `+¥${d.income.toLocaleString()}` : ''}</div>
-      <div class="day-expense">${d.expense > 0 ? `-¥${d.expense.toLocaleString()}` : ''}</div>
+      <div class="day-income">${d.income > 0 ? `¥${d.income.toLocaleString()}` : ''}</div>
+      <div class="day-expense">${d.expense > 0 ? `¥${d.expense.toLocaleString()}` : ''}</div>
     </td>`;
     col++;
     if (col % 7 === 0 && day < daysInMonth) {
