@@ -89,22 +89,21 @@
       <!-- Slide 1: カテゴリ内訳 -->
       <div class="chart-slide">
         <div class="slide-card p-3">
-          <h6 class="slide-title text-muted mb-2">カテゴリ内訳</h6>
-          <div class="slide-body d-flex gap-3">
-            <div class="flex-1" style="flex:1;min-width:0;position:relative">
-              <div class="text-center small fw-bold mb-1 text-danger">支出</div>
-              <div id="expenseCategoryNoData" class="text-muted text-center py-4 small" style="display:none">データなし</div>
-              <div style="position:relative;height:calc(100% - 28px)">
-                <canvas id="expenseCategoryChart"></canvas>
-              </div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="slide-title text-muted mb-0">カテゴリ内訳</h6>
+            <div class="btn-group btn-group-sm">
+              <button class="btn btn-danger active" id="catTabExpense" onclick="switchCatTab('expense')">支出</button>
+              <button class="btn btn-outline-success" id="catTabIncome" onclick="switchCatTab('income')">収入</button>
             </div>
-            <div class="vr"></div>
-            <div class="flex-1" style="flex:1;min-width:0;position:relative">
-              <div class="text-center small fw-bold mb-1 text-success">収入</div>
+          </div>
+          <div class="slide-body" style="position:relative">
+            <div id="catExpensePanel" style="position:absolute;inset:0">
+              <div id="expenseCategoryNoData" class="text-muted text-center py-4 small" style="display:none">データなし</div>
+              <canvas id="expenseCategoryChart"></canvas>
+            </div>
+            <div id="catIncomePanel" style="position:absolute;inset:0;visibility:hidden">
               <div id="incomeCategoryNoData" class="text-muted text-center py-4 small" style="display:none">データなし</div>
-              <div style="position:relative;height:calc(100% - 28px)">
-                <canvas id="incomeCategoryChart"></canvas>
-              </div>
+              <canvas id="incomeCategoryChart"></canvas>
             </div>
           </div>
         </div>
@@ -124,11 +123,11 @@
   </div>
 </div>
 
-<!-- 直近取引 -->
+<!-- 今月の取引 -->
 <div class="card border-0 shadow-sm">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <h6 class="card-title text-muted mb-0">直近の取引</h6>
+      <h6 class="card-title text-muted mb-0" id="transactionListTitle">今月の取引</h6>
       <a href="{{ url_for('transactions.index') }}" class="small">すべて見る</a>
     </div>
     <div id="recentTransactions">
@@ -240,6 +239,14 @@
 }
 .col-sun .day-num { color: #dc3545; }
 .col-sat .day-num { color: #0d6efd; }
+.calendar-cell.clickable { cursor: pointer; }
+.calendar-cell.clickable:hover { background: #e8f4fd; }
+.calendar-cell.selected { background: #cfe2ff !important; }
+@keyframes tx-highlight-fade {
+  0% { background-color: #fff3cd; }
+  100% { background-color: transparent; }
+}
+.tx-highlight { animation: tx-highlight-fade 2s ease forwards; }
 </style>
 
 <script>
@@ -248,6 +255,24 @@ let monthlyChart = null;
 let expenseCategoryChart = null;
 let incomeCategoryChart = null;
 let activeSlide = 0;
+let activeCatTab = 'expense';
+
+function switchCatTab(type) {
+  activeCatTab = type;
+  const expensePanel = document.getElementById('catExpensePanel');
+  const incomePanel = document.getElementById('catIncomePanel');
+  if (type === 'expense') {
+    expensePanel.style.visibility = 'visible';
+    incomePanel.style.visibility = 'hidden';
+    document.getElementById('catTabExpense').className = 'btn btn-danger active';
+    document.getElementById('catTabIncome').className = 'btn btn-outline-success';
+  } else {
+    expensePanel.style.visibility = 'hidden';
+    incomePanel.style.visibility = 'visible';
+    document.getElementById('catTabExpense').className = 'btn btn-outline-danger';
+    document.getElementById('catTabIncome').className = 'btn btn-success active';
+  }
+}
 
 // === 年月の取得・設定 ===
 function getSelected() {
@@ -411,8 +436,13 @@ async function loadCategoryChart() {
   ]);
   const [expData, incData] = await Promise.all([expRes.json(), incRes.json()]);
 
+  // 両パネルを一時的に可視化してCanvasサイズを確保してからビルド
+  const incomePanel = document.getElementById('catIncomePanel');
+  incomePanel.style.visibility = 'visible';
   expenseCategoryChart = buildCategoryChart('expenseCategoryChart', 'expenseCategoryNoData', expenseCategoryChart, expData);
   incomeCategoryChart = buildCategoryChart('incomeCategoryChart', 'incomeCategoryNoData', incomeCategoryChart, incData);
+  // アクティブでないパネルを非表示に戻す
+  if (activeCatTab !== 'income') incomePanel.style.visibility = 'hidden';
 }
 
 async function loadCalendar() {
@@ -444,7 +474,9 @@ async function loadCalendar() {
     const d = data[day] || { income: 0, expense: 0 };
     const isToday = today.getFullYear() === year && (today.getMonth() + 1) === month && today.getDate() === day;
 
-    html += `<td class="calendar-cell ${isToday ? 'today' : ''} ${dowClasses[dow]}">
+    const hasData = d.income > 0 || d.expense > 0;
+    html += `<td class="calendar-cell ${isToday ? 'today' : ''} ${dowClasses[dow]}${hasData ? ' clickable' : ''}"
+      ${hasData ? `onclick="scrollToDate(${day})"` : ''}>
       <div class="day-num${isToday ? ' fw-bold text-decoration-underline' : ''}">${day}</div>
       ${d.income > 0 ? `<div class="day-income">+¥${d.income.toLocaleString()}</div>` : ''}
       ${d.expense > 0 ? `<div class="day-expense">-¥${d.expense.toLocaleString()}</div>` : ''}
@@ -466,7 +498,7 @@ async function loadCalendar() {
 
 async function loadRecentTransactions() {
   const { year, month } = getSelected();
-  const res = await fetch(`/api/transactions?year=${year}&month=${month}&limit=10`);
+  const res = await fetch(`/api/transactions?year=${year}&month=${month}`);
   const data = await res.json();
   const el = document.getElementById('recentTransactions');
   if (!data.length) {
@@ -475,11 +507,11 @@ async function loadRecentTransactions() {
   }
   el.innerHTML = `<div class="list-group list-group-flush">${
     data.map(t => `
-      <div class="list-group-item px-0">
+      <div class="list-group-item px-0" data-date="${t.date}">
         <div class="d-flex justify-content-between align-items-center">
           <div>
-            <span class="badge rounded-pill me-1" style="background:${t.category_color || '#adb5bd'}">${t.category_name || '未分類'}</span>
-            ${t.description}
+            <span class="badge rounded-pill me-1" style="background:${escHtml(t.category_color || '#adb5bd')}">${escHtml(t.category_name || '未分類')}</span>
+            ${escHtml(t.description)}
             <small class="text-muted ms-1">${t.date}</small>
           </div>
           <div class="fw-bold ${t.type === 'income' ? 'text-success' : 'text-danger'}">
@@ -488,6 +520,31 @@ async function loadRecentTransactions() {
         </div>
       </div>`).join('')
   }</div>`;
+}
+
+function scrollToDate(day) {
+  const { year, month } = getSelected();
+  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+  // カレンダーのselectd状態更新
+  document.querySelectorAll('.calendar-cell.selected').forEach(el => el.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+
+  const items = document.querySelectorAll(`[data-date="${dateStr}"]`);
+  if (!items.length) return;
+
+  // 既存のハイライトを除去してから新しくハイライト
+  document.querySelectorAll('.tx-highlight').forEach(el => {
+    el.classList.remove('tx-highlight');
+    void el.offsetWidth; // reflow
+  });
+  items.forEach(el => el.classList.add('tx-highlight'));
+  items[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 async function reload() {

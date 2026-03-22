@@ -5,9 +5,10 @@
 
 <!-- 取り込み中オーバーレイ -->
 <div id="uploadOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:12px">
-  <div class="spinner-border text-light" style="width:3rem;height:3rem"></div>
-  <div class="text-white fw-bold fs-5">取り込み中...</div>
-  <div class="text-white-50 small">しばらくお待ちください</div>
+  <div id="uploadSpinner" class="spinner-border text-light" style="width:3rem;height:3rem"></div>
+  <div class="text-white fw-bold fs-5" id="uploadStatusText">取り込み中...</div>
+  <div id="uploadProgressText" class="text-white fs-6" style="display:none"></div>
+  <div class="text-white-50 small" id="uploadWaitText">しばらくお待ちください</div>
 </div>
 
 <h4 class="mb-4"><i class="bi bi-upload"></i> PayPay CSV 取り込み</h4>
@@ -74,9 +75,34 @@
 
 {% block scripts %}
 <script>
-document.getElementById('uploadForm').addEventListener('submit', function() {
-  document.getElementById('uploadOverlay').style.display = 'flex';
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const overlay = document.getElementById('uploadOverlay');
+  overlay.style.display = 'flex';
   document.getElementById('uploadBtn').disabled = true;
+
+  try {
+    const res = await fetch(this.action, { method: 'POST', body: new FormData(this) });
+    const data = await res.json();
+    document.getElementById('uploadSpinner').style.display = 'none';
+    document.getElementById('uploadWaitText').style.display = 'none';
+    if (data.error) {
+      document.getElementById('uploadStatusText').textContent = 'エラーが発生しました';
+      document.getElementById('uploadProgressText').style.display = '';
+      document.getElementById('uploadProgressText').textContent = data.error;
+      setTimeout(() => { overlay.style.display = 'none'; document.getElementById('uploadBtn').disabled = false; }, 3000);
+    } else {
+      document.getElementById('uploadStatusText').textContent = '取り込み完了';
+      document.getElementById('uploadProgressText').style.display = '';
+      document.getElementById('uploadProgressText').textContent =
+        `${data.added}件追加 / ${data.total_found}件検出`;
+      setTimeout(() => location.reload(), 1500);
+    }
+  } catch (err) {
+    overlay.style.display = 'none';
+    alert('エラーが発生しました');
+    document.getElementById('uploadBtn').disabled = false;
+  }
 });
 </script>
 {% endblock %}

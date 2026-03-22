@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from app.models import ScanLog
 from app.services.paypay_parser import import_csv
 
@@ -23,12 +23,6 @@ def upload():
 
     try:
         result = import_csv(content, import_investment=import_investment)
-        flash(
-            f"取り込み完了: {result['added']}件追加, {result['skipped']}件スキップ "
-            f"(合計 {result['total_found']}件検出)",
-            "success",
-        )
+        return jsonify(result)
     except Exception as e:
-        flash(f"エラーが発生しました: {e}", "danger")
-
-    return redirect(url_for("paypay.index"))
+        return jsonify({"error": str(e)}), 500

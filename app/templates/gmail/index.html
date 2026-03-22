@@ -313,7 +313,7 @@ function startProgressPolling() {
     try {
       const res = await fetch('/gmail/scan/progress');
       const p = await res.json();
-      progressText.textContent = `${p.total_found}件検出 / ${p.added}件追加`;
+      progressText.textContent = `${p.added}件追加 / ${p.total_found}件検出`;
       if (p.done) {
         clearInterval(_pollTimer);
         if (p.error) {

@@ -11,12 +11,11 @@ bp = Blueprint("dashboard", __name__)
 def transactions_json():
     year = request.args.get("year", date.today().year, type=int)
     month = request.args.get("month", date.today().month, type=int)
-    limit = request.args.get("limit", 20, type=int)
 
     txs = Transaction.query.filter(
         extract("year", Transaction.date) == year,
         extract("month", Transaction.date) == month,
-    ).order_by(Transaction.date.desc(), Transaction.id.desc()).limit(limit).all()
+    ).order_by(Transaction.date.desc(), Transaction.id.desc()).all()
 
     return jsonify([t.to_dict() for t in txs])
 
