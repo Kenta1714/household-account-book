@@ -130,8 +130,10 @@
       <h6 class="card-title text-muted mb-0" id="transactionListTitle">今月の取引</h6>
       <a href="{{ url_for('transactions.index') }}" class="small">すべて見る</a>
     </div>
-    <div id="recentTransactions">
-      <div class="text-center text-muted py-3">読み込み中...</div>
+    <div id="recentTransactionsScroll" style="max-height:360px;overflow-y:auto">
+      <div id="recentTransactions">
+        <div class="text-center text-muted py-3">読み込み中...</div>
+      </div>
     </div>
   </div>
 </div>
@@ -526,7 +528,7 @@ function scrollToDate(day) {
   const { year, month } = getSelected();
   const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-  // カレンダーのselectd状態更新
+  // カレンダーのselected状態更新
   document.querySelectorAll('.calendar-cell.selected').forEach(el => el.classList.remove('selected'));
   event.currentTarget.classList.add('selected');
 
@@ -539,7 +541,10 @@ function scrollToDate(day) {
     void el.offsetWidth; // reflow
   });
   items.forEach(el => el.classList.add('tx-highlight'));
-  items[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  // コンテナ内でスクロール（最初のアイテムが最上部に来るように）
+  const container = document.getElementById('recentTransactionsScroll');
+  container.scrollTo({ top: items[0].offsetTop - container.offsetTop, behavior: 'smooth' });
 }
 
 function escHtml(str) {
