@@ -30,8 +30,10 @@ def _apply_basic_auth(app):
 
     @app.before_request
     def require_auth():
-        if request.path == "/ping":
-            return  # スリープ対策用エンドポイントは認証不要
+        if request.path in ("/ping", "/favicon.ico") or \
+                request.path.startswith("/static/apple-touch-icon") or \
+                request.path.startswith("/static/icon-"):
+            return  # スリープ対策・アイコン類は認証不要
         auth = request.authorization
         if not auth or auth.username != username or auth.password != password:
             return Response(
@@ -58,6 +60,12 @@ def create_app():
     @app.route("/ping")
     def ping():
         return "ok", 200
+
+    @app.route("/favicon.ico")
+    def favicon():
+        from flask import send_from_directory
+        return send_from_directory(app.static_folder, "apple-touch-icon.png",
+                                   mimetype="image/png")
 
     with app.app_context():
         db.create_all()
