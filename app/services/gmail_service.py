@@ -88,6 +88,19 @@ def _save_token(creds: Credentials):
         f.write(token_json)
 
 
+def _delete_token():
+    """期限切れ・失効トークンをDBとファイルから削除する"""
+    try:
+        row = Setting.query.get(_GMAIL_TOKEN_KEY)
+        if row:
+            db.session.delete(row)
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+    if os.path.exists(TOKEN_FILE):
+        os.remove(TOKEN_FILE)
+
+
 def get_credentials() -> Credentials | None:
     token_json = _load_token_json()
     if not token_json:
@@ -96,8 +109,13 @@ def get_credentials() -> Credentials | None:
         __import__("json").loads(token_json), SCOPES
     )
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        _save_token(creds)
+        try:
+            creds.refresh(Request())
+            _save_token(creds)
+        except Exception:
+            # トークンが失効・取り消し済みの場合は削除して未認証扱いにする
+            _delete_token()
+            return None
     return creds if creds and creds.valid else None
 
 
