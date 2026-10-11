@@ -1,8 +1,10 @@
-import os
+import hmac
+import click
 from flask import Flask, request, Response
-from app.config import Config
+from app.config import configure_app
 from app.extensions import db, scheduler
 from app.models import Category
+from werkzeug.serving import is_running_from_reloader
 
 
 DEFAULT_CATEGORIES = [
@@ -22,11 +24,9 @@ DEFAULT_CATEGORIES = [
 
 
 def _apply_basic_auth(app):
-    """APP_USERNAME / APP_PASSWORD が設定されている場合のみ Basic 認証を有効化"""
-    username = os.environ.get("APP_USERNAME", "")
-    password = os.environ.get("APP_PASSWORD", "")
-    if not username or not password:
-        return  # ローカル開発時はスキップ
+    """起動時に検証済みの認証情報を両環境で必須にする。"""
+    username = app.config["APP_USERNAME"]
+    password = app.config["APP_PASSWORD"]
 
     @app.before_request
     def require_auth():
@@ -35,7 +35,9 @@ def _apply_basic_auth(app):
                 request.path.startswith("/static/icon-"):
             return  # スリープ対策・アイコン類は認証不要
         auth = request.authorization
-        if not auth or auth.username != username or auth.password != password:
+        valid_username = hmac.compare_digest((auth.username or "").encode(), username.encode()) if auth else False
+        valid_password = hmac.compare_digest((auth.password or "").encode(), password.encode()) if auth else False
+        if not valid_username or not valid_password:
             return Response(
                 "このアプリへのアクセスには認証が必要です",
                 401,
@@ -43,10 +45,15 @@ def _apply_basic_auth(app):
             )
 
 
-def create_app():
+def create_app(test_config=None):
     app = Flask(__name__)
-    app.config.from_object(Config)
+    configure_app(app)
+    if test_config is not None:
+        app.config.update(test_config)
     _apply_basic_auth(app)
+
+    from app.commands import register_commands
+    register_commands(app)
 
     db.init_app(app)
 
@@ -74,7 +81,15 @@ def create_app():
 
     # Gmail定期スキャン（間隔はDBのscan_interval_minutes設定値、デフォルト30分）
     # Flaskのdebugリローダーが起動する子プロセスではスケジューラを起動しない
-    if not scheduler.running and os.environ.get("WERKZEUG_RUN_MAIN") != "false":
+    # shell・トークン移行などの保守コマンドではバックグラウンド取込を起動しない。
+    cli_context = click.get_current_context(silent=True)
+    serving = cli_context is None or cli_context.find_root().invoked_subcommand == "run"
+    if (
+        app.config["SCHEDULER_ENABLED"]
+        and serving
+        and not scheduler.running
+        and (not app.debug or is_running_from_reloader())
+    ):
         from app.services import gmail_service as gs
         from app.services.gmail_service import scan_emails
 
@@ -83,13 +98,10 @@ def create_app():
                 if gs.is_authenticated():
                     scan_emails(batch=False)
 
-        try:
-            with app.app_context():
-                from app.models import Setting
-                s = Setting.query.get("scan_interval_minutes")
-                interval_minutes = int(s.value) if s else 30
-        except Exception:
-            interval_minutes = 30
+        with app.app_context():
+            from app.models import Setting
+            s = db.session.get(Setting, "scan_interval_minutes")
+            interval_minutes = int(s.value) if s else 30
 
         scheduler.add_job(scheduled_gmail_scan, "interval", minutes=interval_minutes, id="gmail_scan")
         scheduler.start()

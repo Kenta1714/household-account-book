@@ -14,9 +14,15 @@ Flask製のローカル家計簿Webアプリ。Gmail連携・PayPay連携によ�
 ## 開発サーバー起動
 
 ```bash
-uv run python run.py
+APP_ENV=development uv run flask --app app:create_app run --debug --port 8080
 # → http://localhost:8080
 ```
+
+環境別設定・必須環境変数・Renderデプロイ手順は `README.md` を参照。
+設定は `Config` / `DevelopmentConfig` / `ProductionConfig` で分け、
+`create_app()` 内でDB初期化前に検証する。開発・本番ともBasic認証は必須。
+既存データを維持するため `DATABASE_URL` の接続先を変更しないこと。
+GmailトークンはDB保存に統一し、通信・DB障害時は削除しない。
 
 ## ディレクトリ構成
 

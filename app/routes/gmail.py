@@ -1,12 +1,8 @@
-import os
 import secrets
 import hashlib
 import base64
 
-# 本番環境では GMAIL_REDIRECT_URI に Render の URL を設定する
-_DEFAULT_REDIRECT_URI = "http://localhost:8080/gmail/oauth/callback"
-
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app, abort
 from app.extensions import db
 from app.models import EmailFormat, Category, ScanLog, ScanSkipDetail
 from app.services import gmail_service
@@ -16,7 +12,7 @@ bp = Blueprint("gmail", __name__, url_prefix="/gmail")
 
 
 def _get_redirect_uri() -> str:
-    return os.environ.get("GMAIL_REDIRECT_URI", _DEFAULT_REDIRECT_URI)
+    return current_app.config["GMAIL_REDIRECT_URI"]
 
 
 def _pkce_pair():
@@ -75,15 +71,27 @@ def auth():
         code_challenge=challenge,
         code_challenge_method="S256",
     )
+    session["gmail_oauth_state"] = state
     return redirect(auth_url)
 
 
 @bp.route("/oauth/callback")
 def oauth_callback():
-    flow = gmail_service.get_flow(_get_redirect_uri())
+    state = session.pop("gmail_oauth_state", None)
     code_verifier = _load_and_delete_verifier()
+    received_state = request.args.get("state", "")
+    if (
+        not state or not code_verifier or len(request.args.getlist("state")) != 1
+        or not secrets.compare_digest(state.encode(), received_state.encode())
+    ):
+        abort(400, description="Gmail認証の確認に失敗しました。連携を最初からやり直してください。")
+    if request.args.get("error") or not request.args.get("code"):
+        abort(400, description="Gmail認証が完了していません。連携をやり直してください。")
+    flow = gmail_service.get_flow(_get_redirect_uri(), state=state)
+    # RenderのHTTPS終端後はrequest.urlがHTTPになり得る。設定済みのURLを使う。
+    authorization_response = _get_redirect_uri() + "?" + request.query_string.decode("ascii")
     flow.fetch_token(
-        authorization_response=request.url,
+        authorization_response=authorization_response,
         code_verifier=code_verifier,
     )
     gmail_service._save_token(flow.credentials)

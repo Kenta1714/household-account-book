@@ -1,12 +1,14 @@
-import os
+import json
 import base64
 import threading
 from datetime import datetime
 
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+from flask import current_app
 
 from app.extensions import db
 from app.models import Transaction, EmailFormat, ScanLog, ScanSkipDetail, Setting
@@ -15,9 +17,6 @@ from app.services.email_parser import extract_amount, extract_content, extract_c
 _GMAIL_TOKEN_KEY = "gmail_token"
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-# ローカル開発用のフォールバックファイルパス（本番DBが使えない場合）
-CREDENTIALS_FILE = os.environ.get("CREDENTIALS_FILE", "credentials.json")
-TOKEN_FILE = os.environ.get("TOKEN_FILE_PATH", "token.json")
 
 # スキャン進捗（メモリ内）
 _scan_lock = threading.Lock()
@@ -42,63 +41,45 @@ def _update_progress(**kwargs):
         _scan_progress.update(kwargs)
 
 
-def get_flow(redirect_uri: str) -> Flow:
-    """credentials.json の内容を env var GOOGLE_CREDENTIALS_JSON から読む（本番用）。
-    env var が未設定の場合はローカルのファイルを使う。"""
-    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if creds_json:
-        import json
-        return Flow.from_client_config(
-            json.loads(creds_json), scopes=SCOPES, redirect_uri=redirect_uri
-        )
-    return Flow.from_client_secrets_file(
-        CREDENTIALS_FILE, scopes=SCOPES, redirect_uri=redirect_uri
+def get_flow(redirect_uri: str, *, state: str | None = None) -> Flow:
+    """起動時に検証した環境別のOAuth認証情報を使用する。"""
+    return Flow.from_client_config(
+        current_app.config["GOOGLE_CLIENT_CONFIG"], scopes=SCOPES,
+        redirect_uri=redirect_uri, state=state, autogenerate_code_verifier=False,
     )
 
 
 def _load_token_json() -> str | None:
-    """DB → ローカルファイルの順でトークン JSON を読む"""
-    try:
-        row = Setting.query.get(_GMAIL_TOKEN_KEY)
-        if row and row.value:
-            return row.value
-    except Exception:
-        pass
-    # DB が使えない場合（ローカル開発初回など）はファイルにフォールバック
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE) as f:
-            return f.read()
-    return None
+    """トークン未登録は正常。DB障害は呼び出し元へ伝える。"""
+    row = db.session.get(Setting, _GMAIL_TOKEN_KEY)
+    return row.value if row else None
 
 
 def _save_token(creds: Credentials):
-    """DB にトークンを保存する。DB が使えない場合はファイルにフォールバック"""
+    """既存のDBキーを維持する。保存に失敗したらロールバックして通知する。"""
     token_json = creds.to_json()
     try:
-        row = Setting.query.get(_GMAIL_TOKEN_KEY)
+        row = db.session.get(Setting, _GMAIL_TOKEN_KEY)
         if row:
             row.value = token_json
         else:
             db.session.add(Setting(key=_GMAIL_TOKEN_KEY, value=token_json))
         db.session.commit()
-        return
     except Exception:
         db.session.rollback()
-    with open(TOKEN_FILE, "w") as f:
-        f.write(token_json)
+        raise
 
 
 def _delete_token():
-    """期限切れ・失効トークンをDBとファイルから削除する"""
+    """Googleから失効が確認できたDBトークンのみ削除する。"""
     try:
-        row = Setting.query.get(_GMAIL_TOKEN_KEY)
+        row = db.session.get(Setting, _GMAIL_TOKEN_KEY)
         if row:
             db.session.delete(row)
-            db.session.commit()
+        db.session.commit()
     except Exception:
         db.session.rollback()
-    if os.path.exists(TOKEN_FILE):
-        os.remove(TOKEN_FILE)
+        raise
 
 
 def get_credentials() -> Credentials | None:
@@ -106,16 +87,21 @@ def get_credentials() -> Credentials | None:
     if not token_json:
         return None
     creds = Credentials.from_authorized_user_info(
-        __import__("json").loads(token_json), SCOPES
+        json.loads(token_json), SCOPES
     )
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
-            _save_token(creds)
-        except Exception:
-            # トークンが失効・取り消し済みの場合は削除して未認証扱いにする
-            _delete_token()
-            return None
+        except RefreshError as exc:
+            revoked = not exc.retryable and any(
+                isinstance(arg, dict) and arg.get("error") == "invalid_grant"
+                for arg in exc.args
+            )
+            if revoked:
+                _delete_token()
+                return None
+            raise
+        _save_token(creds)
     return creds if creds and creds.valid else None
 
 
