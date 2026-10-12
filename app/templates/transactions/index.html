@@ -107,6 +107,7 @@
             </a>
             <form method="post" action="{{ url_for('transactions.delete', tx_id=tx.id) }}"
                   class="d-inline" onsubmit="return confirm('削除しますか？')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-outline-danger btn-sm py-0">
                 <i class="bi bi-trash"></i>
               </button>
@@ -126,6 +127,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <form method="post" action="{{ url_for('transactions.bulk_delete') }}" id="bulkDeleteForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-header">
           <h5 class="modal-title text-danger"><i class="bi bi-trash"></i> 一括削除</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

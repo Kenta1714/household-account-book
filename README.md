@@ -88,6 +88,16 @@ APP_ENV=development uv run flask --app app:create_app import-gmail-token --file 
 デプロイ前から進行中だったOAuthは `state` 検証の追加により失敗することがあります。
 その場合のみGmail連携を最初からやり直してください。既存DBトークンは影響を受けません。
 
+## CSRF対策
+
+更新・削除などのPOSTリクエストはFlask-WTFのCSRF保護で検証します。
+HTMLフォームには `csrf_token` の隠し入力を、JavaScriptのJSON送信には
+`X-CSRFToken` ヘッダーを付けてください。`FormData` 送信にはフォーム内の隠し入力も含まれます。
+トークンが未送信・不正・期限切れの場合は処理を実行せずHTTP 400を返します。
+JSON送信や `Accept: application/json` を指定したリクエストにはJSONでエラーを返します。
+画面を再読み込みしてから操作をやり直してください。
+OAuthの `state` 検証は引き続き認証コールバック専用に行います。
+
 ## テスト
 
 ```bash

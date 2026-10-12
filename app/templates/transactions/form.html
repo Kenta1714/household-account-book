@@ -12,6 +12,7 @@
       <div class="card-body">
         <h5 class="card-title mb-4">{{ '収支を編集' if tx else '収支を追加' }}</h5>
         <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">
             <label class="form-label">種別</label>
             <div class="btn-group w-100" role="group">

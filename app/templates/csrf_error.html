@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}操作を確認できませんでした - 家計簿{% endblock %}
+{% block content %}
+<div class="alert alert-warning" role="alert">
+  {{ message }}
+</div>
+<p>前の画面に戻り、再読み込みしてから操作をやり直してください。</p>
+<a href="{{ url_for('dashboard.index') }}" class="btn btn-outline-secondary">ダッシュボードに戻る</a>
+{% endblock %}

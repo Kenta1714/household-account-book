@@ -33,6 +33,7 @@
       {% else %}
         <div class="d-flex gap-2 flex-wrap align-items-center">
           <form method="post" action="{{ url_for('gmail.scan') }}" class="scan-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="batch" value="0">
             <button type="submit" class="btn btn-outline-primary btn-sm scan-btn">
               <i class="bi bi-arrow-clockwise"></i> 今すぐスキャン（前回以降）
@@ -40,6 +41,7 @@
           </form>
           <form method="post" action="{{ url_for('gmail.scan') }}" class="scan-form"
                 onsubmit="return confirm('過去のメールをすべてスキャンします。時間がかかる場合があります。続けますか？')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="batch" value="1">
             <button type="submit" class="btn btn-outline-warning btn-sm scan-btn">
               <i class="bi bi-inbox"></i> 一括取り込み（全件）
@@ -113,6 +115,7 @@
           <td>
             <form method="post" action="{{ url_for('gmail.format_delete', fmt_id=fmt.id) }}"
                   onsubmit="return confirm('削除しますか？')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-outline-danger btn-sm py-0">
                 <i class="bi bi-trash"></i>
               </button>
@@ -207,6 +210,7 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <form method="post" action="{{ url_for('gmail.format_new') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-header">
           <h5 class="modal-title">メールフォーマット登録</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -366,6 +370,8 @@
 
 {% block scripts %}
 <script>
+const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+
 // スキャン: AJAXでバックグラウンド実行 → 進捗ポーリング
 let _pollTimer = null;
 
@@ -400,11 +406,20 @@ document.querySelectorAll('.scan-form').forEach(form => {
 
     const res = await fetch('/gmail/scan', {
       method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'X-CSRFToken': csrfToken,
+      },
       body: 'batch=' + batch,
     });
     if (res.status === 409) {
       alert('現在スキャン中です。完了までお待ちください。');
+      return;
+    }
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || 'スキャンを開始できませんでした。');
       return;
     }
     overlay.style.display = 'flex';
@@ -416,17 +431,26 @@ document.querySelectorAll('.scan-form').forEach(form => {
 // 自動スキャン間隔変更
 const intervalSelect = document.getElementById('scanIntervalSelect');
 if (intervalSelect) {
+  let savedInterval = intervalSelect.value;
   intervalSelect.addEventListener('change', async function() {
     const minutes = parseInt(this.value);
     const res = await fetch('/gmail/scan/interval', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken,
+      },
       body: JSON.stringify({minutes}),
     });
     if (res.ok) {
+      savedInterval = this.value;
       const msg = document.getElementById('intervalSaveMsg');
       msg.style.display = '';
       setTimeout(() => { msg.style.display = 'none'; }, 2000);
+    } else {
+      this.value = savedInterval;
+      const data = await res.json();
+      alert(data.error || 'スキャン間隔を保存できませんでした。');
     }
   });
 }
@@ -469,12 +493,20 @@ async function previewExtraction(mode, prefix, suffix, resultId, alertId) {
   }
   const res = await fetch('/gmail/formats/preview', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrfToken,
+    },
     body: JSON.stringify({body, prefix, suffix, mode}),
   });
   const d = await res.json();
   document.getElementById(resultId).style.display = '';
   const alert = document.getElementById(alertId);
+  if (!res.ok) {
+    alert.className = 'alert alert-danger mb-0';
+    alert.textContent = d.error || 'プレビューを実行できませんでした。';
+    return;
+  }
   if (d.success) {
     const val = mode === 'amount' ? `¥${d.value.toLocaleString()}` : d.value;
     alert.className = 'alert alert-success mb-0';

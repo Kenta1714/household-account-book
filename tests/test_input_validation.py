@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 from datetime import date
@@ -51,6 +52,14 @@ class InputValidationTests(unittest.TestCase):
             "Authorization": "Basic " + base64.b64encode(b"test-user:test-password").decode()
         }
         self.addCleanup(self._dispose_app)
+        # 入力検証テストも実際の画面から取得したCSRFトークンで送信する。
+        response = self.client.get("/transactions/new", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        token = re.search(
+            r'<meta name="csrf-token" content="([^"]+)">',
+            response.get_data(as_text=True),
+        ).group(1)
+        self.headers["X-CSRFToken"] = token
 
     def _dispose_app(self):
         with self.app.app_context():

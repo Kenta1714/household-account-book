@@ -1,8 +1,9 @@
 import hmac
 import click
-from flask import Flask, request, Response
+from flask import Flask, request, Response, jsonify, render_template
+from flask_wtf.csrf import CSRFError
 from app.config import configure_app
-from app.extensions import db, scheduler
+from app.extensions import csrf, db, scheduler
 from app.models import Category
 from werkzeug.serving import is_running_from_reloader
 
@@ -51,6 +52,14 @@ def create_app(test_config=None):
     if test_config is not None:
         app.config.update(test_config)
     _apply_basic_auth(app)
+    csrf.init_app(app)
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(error):
+        message = "操作の確認に失敗しました。画面を再読み込みして、もう一度操作してください。"
+        if request.is_json or request.accept_mimetypes.best == "application/json":
+            return jsonify({"error": message}), 400
+        return render_template("csrf_error.html", message=message), 400
 
     from app.commands import register_commands
     register_commands(app)

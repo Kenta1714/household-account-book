@@ -23,6 +23,7 @@
           重複する取引（同じ取引番号）は自動的にスキップされます。
         </p>
         <form id="uploadForm" method="post" action="{{ url_for('paypay.upload') }}" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">
             <label class="form-label">CSVファイル</label>
             <input type="file" name="csv_file" class="form-control" accept=".csv" required>
@@ -82,7 +83,11 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
   document.getElementById('uploadBtn').disabled = true;
 
   try {
-    const res = await fetch(this.action, { method: 'POST', body: new FormData(this) });
+    const res = await fetch(this.action, {
+      method: 'POST',
+      headers: {'Accept': 'application/json'},
+      body: new FormData(this),
+    });
     const data = await res.json();
     document.getElementById('uploadSpinner').style.display = 'none';
     document.getElementById('uploadWaitText').style.display = 'none';
