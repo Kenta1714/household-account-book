@@ -1,6 +1,7 @@
 import json
 import base64
 import threading
+from contextlib import nullcontext
 from datetime import datetime
 
 from google.auth.transport.requests import Request
@@ -18,7 +19,7 @@ _GMAIL_TOKEN_KEY = "gmail_token"
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
-# スキャン進捗（メモリ内）
+# スキャン開始判定と進捗を同じロックで保護する（1プロセス限定）。
 _scan_lock = threading.Lock()
 _scan_progress = {
     "running": False,
@@ -138,17 +139,46 @@ def _get_header(headers: list, name: str) -> str:
     return ""
 
 
-def scan_emails(batch: bool = False, trigger: str = "auto") -> dict:
-    _update_progress(running=True, batch=batch, total_found=0, added=0,
-                     done=False, error=None, result=None)
+def scan_emails(
+    batch: bool = False, trigger: str = "auto", *, background: bool = False,
+) -> dict | None:
+    """手動・定期共通の入口。実行中ならNone、非同期開始時は開始結果を返す。"""
+    app = current_app._get_current_object() if background else None
+    # 確認と予約をまとめ、バックグラウンドスレッドの起動前に確保する。
+    with _scan_lock:
+        if _scan_progress["running"]:
+            return None
+        _scan_progress.update(
+            running=True, batch=batch, total_found=0, added=0,
+            done=False, error=None, result=None,
+        )
+
+    if not background:
+        return _run_scan(batch, trigger)
+
     try:
-        result = _do_scan(batch, trigger=trigger)
-    except Exception as e:
-        _update_progress(running=False, done=True, error=str(e))
+        threading.Thread(
+            target=_run_scan,
+            kwargs={"batch": batch, "trigger": trigger, "app": app},
+            daemon=True,
+        ).start()
+    except Exception as exc:
+        _update_progress(running=False, done=True, error=str(exc))
         raise
-    _update_progress(running=False, done=True, result=result,
-                     total_found=result["total_found"], added=result["added"])
-    return result
+    return {"started": True}
+
+
+def _run_scan(batch: bool, trigger: str, *, app=None) -> dict:
+    """開始予約済みのスキャンを実行し、成功・失敗時に予約を解放する。"""
+    try:
+        with app.app_context() if app is not None else nullcontext():
+            result = _do_scan(batch, trigger=trigger)
+        _update_progress(running=False, done=True, result=result,
+                         total_found=result["total_found"], added=result["added"])
+        return result
+    except BaseException as exc:
+        _update_progress(running=False, done=True, error=str(exc))
+        raise
 
 
 def _do_scan(batch: bool, trigger: str = "auto") -> dict:

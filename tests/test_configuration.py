@@ -463,6 +463,20 @@ class ApplicationTests(IsolatedEnvironment):
 
 
 class SchedulerTests(IsolatedEnvironment):
+    def test_scheduled_scan_skips_when_another_scan_is_running(self):
+        self.make_app()
+        with patch("app.scheduler") as scheduler:
+            scheduler.running = False
+            self.make_app(SCHEDULER_ENABLED=True)
+        scheduled_scan = scheduler.add_job.call_args.args[0]
+        with patch.dict(gmail_service._scan_progress, {"running": True, "added": 5}), \
+                patch.object(gmail_service, "is_authenticated", return_value=True), \
+                patch.object(gmail_service, "_do_scan") as scan:
+            progress = gmail_service.get_scan_progress()
+            scheduled_scan()
+            scan.assert_not_called()
+            self.assertEqual(gmail_service.get_scan_progress(), progress)
+
     def test_flask_cli_maintenance_does_not_start_scheduler(self):
         group = FlaskGroup(create_app=create_app, load_dotenv=False)
         with patch("app.scheduler") as scheduler:

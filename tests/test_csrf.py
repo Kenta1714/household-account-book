@@ -202,15 +202,14 @@ class CsrfTests(IsolatedEnvironment):
 
     def test_scan_with_header_token_starts_background_job(self):
         token = self.page("/gmail/").token
-        with patch("app.services.gmail_service.get_scan_progress", return_value={"running": False}), \
-                patch("threading.Thread") as thread:
+        with patch("app.services.gmail_service.scan_emails", return_value={"started": True}) as scan:
             response = self.client.post(
                 "/gmail/scan", data={"batch": "0"},
                 headers={**self.headers, "Accept": "application/json", "X-CSRFToken": token},
             )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.get_json()["started"])
-        thread.return_value.start.assert_called_once()
+        scan.assert_called_once_with(batch=False, trigger="manual", background=True)
 
     def test_multipart_upload_with_hidden_token_imports_csv(self):
         token = self.form_token("/paypay/", action="/paypay/upload")

@@ -110,20 +110,14 @@ def oauth_callback():
 @bp.route("/scan", methods=["POST"])
 def scan():
     batch = request.form.get("batch") == "1"
-    progress = gmail_service.get_scan_progress()
-    if progress["running"]:
+    try:
+        result = gmail_service.scan_emails(batch=batch, trigger="manual", background=True)
+    except Exception:
+        current_app.logger.exception("Gmailスキャンの開始に失敗しました")
+        return jsonify({"error": "スキャンを開始できませんでした。もう一度お試しください。"}), 500
+    if result is None:
         return jsonify({"error": "スキャン中です"}), 409
-
-    from threading import Thread
-    from flask import current_app
-    app = current_app._get_current_object()
-
-    def run():
-        with app.app_context():
-            gmail_service.scan_emails(batch=batch, trigger="manual")
-
-    Thread(target=run, daemon=True).start()
-    return jsonify({"started": True})
+    return jsonify(result)
 
 
 @bp.route("/scan/progress")

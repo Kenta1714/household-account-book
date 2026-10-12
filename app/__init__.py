@@ -78,12 +78,11 @@ def create_app(test_config=None):
         and (not app.debug or is_running_from_reloader())
     ):
         from app.services import gmail_service as gs
-        from app.services.gmail_service import scan_emails
 
         def scheduled_gmail_scan():
             with app.app_context():
                 if gs.is_authenticated():
-                    scan_emails(batch=False)
+                    gs.scan_emails(batch=False, trigger="auto")
 
         with app.app_context():
             from app.models import Setting
