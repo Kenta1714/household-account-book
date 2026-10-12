@@ -412,12 +412,26 @@ if (intervalSelect) {
 (function() {
   const params = new URLSearchParams(location.search);
   if (params.get('scan_done')) {
-    const added = params.get('added') || 0;
-    const skipped = params.get('skipped') || 0;
+    const parseCount = (value) => {
+      if (value === null || !/^\d+$/.test(value)) return 0;
+      const count = Number(value);
+      return Number.isSafeInteger(count) ? count : 0;
+    };
+    const added = parseCount(params.get('added'));
+    const skipped = parseCount(params.get('skipped'));
     const div = document.createElement('div');
     div.className = 'alert alert-success alert-dismissible fade show';
-    div.innerHTML = `スキャン完了: ${added}件追加, ${skipped}件スキップ
-      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+
+    const message = document.createElement('span');
+    message.textContent = `スキャン完了: ${added}件追加, ${skipped}件スキップ`;
+
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'btn-close';
+    closeButton.dataset.bsDismiss = 'alert';
+    closeButton.setAttribute('aria-label', '閉じる');
+
+    div.append(message, closeButton);
     document.querySelector('.container-fluid').prepend(div);
     history.replaceState({}, '', '/gmail/');
   }

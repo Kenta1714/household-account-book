@@ -23,8 +23,12 @@
             {% if cat.is_default %}<small class="text-muted">(デフォルト)</small>{% endif %}
           </span>
           <div class="d-flex gap-1">
-            <button class="btn btn-outline-secondary btn-sm py-0"
-                    onclick="openEditModal({{ cat.id }}, '{{ cat.name }}', '{{ cat.type }}', '{{ cat.color }}')">
+            <button type="button"
+                    class="btn btn-outline-secondary btn-sm py-0 js-edit-category"
+                    data-category-id="{{ cat.id }}"
+                    data-category-name="{{ cat.name }}"
+                    data-category-type="{{ cat.type }}"
+                    data-category-color="{{ cat.color }}">
               <i class="bi bi-pencil"></i>
             </button>
             <form method="post" action="{{ url_for('categories.delete', cat_id=cat.id) }}"
@@ -131,9 +135,24 @@ function openEditModal(id, name, type, color) {
   document.getElementById('editCatForm').action = `/categories/${id}/edit`;
   document.getElementById('editCatName').value = name;
   document.getElementById('editCatType').value = type;
-  const radio = document.querySelector(`input[name="color"][id="ec_${color}"]`);
+  const radio = Array.from(document.querySelectorAll('#editCatModal input[name="color"]'))
+    .find((input) => input.value === color);
   if (radio) radio.checked = true;
   new bootstrap.Modal(document.getElementById('editCatModal')).show();
 }
+
+document.querySelectorAll('.js-edit-category').forEach((button) => {
+  button.addEventListener('click', () => {
+    const id = Number(button.dataset.categoryId);
+    if (!Number.isSafeInteger(id) || id <= 0) return;
+
+    openEditModal(
+      id,
+      button.dataset.categoryName,
+      button.dataset.categoryType,
+      button.dataset.categoryColor
+    );
+  });
+});
 </script>
 {% endblock %}

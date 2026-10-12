@@ -200,6 +200,28 @@ class ApplicationTests(IsolatedEnvironment):
         self.assertEqual(self.client.get("/", headers=self.headers).status_code, 200)
         self.assertEqual(self.client.get("/ping").status_code, 200)
 
+    def test_category_edit_data_is_not_embedded_in_inline_javascript(self):
+        with self.app.app_context():
+            db.session.add(Category(name="O'Reilly", type="expense", color="#4e79a7"))
+            db.session.commit()
+
+        response = self.client.get("/categories/", headers=self.headers)
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('data-category-name="O&#39;Reilly"', html)
+        self.assertNotIn('onclick="openEditModal', html)
+        self.assertIn("button.dataset.categoryName", html)
+
+    def test_gmail_scan_result_uses_validated_text_content(self):
+        response = self.client.get("/gmail/", headers=self.headers)
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Number.isSafeInteger(count)", html)
+        self.assertIn("message.textContent", html)
+        self.assertNotIn("div.innerHTML", html)
+
     def test_existing_transactions_settings_and_token_survive_restart(self):
         with self.app.app_context():
             category = Category.query.first()
