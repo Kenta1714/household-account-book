@@ -1,4 +1,9 @@
-# CLAUDE.md — 家計簿アプリ プロジェクトガイド
+# 家計簿アプリ AI開発ガイド
+
+## ドキュメント同期ルール
+
+- `CLAUDE.md` と `AGENTS.md` は常に同じ内容を維持する
+- どちらか一方を修正する場合は、同じ変更をもう一方にも反映する
 
 ## プロジェクト概要
 
@@ -29,6 +34,7 @@ GmailトークンはDB保存に統一し、通信・DB障害時は削除しな�
 ```
 app/
 ├── __init__.py          # create_app(), DB初期化, スケジューラ起動
+├── commands.py          # Flask CLIコマンド
 ├── config.py
 ├── extensions.py        # db, scheduler インスタンス
 ├── models/              # SQLAlchemy モデル
@@ -36,16 +42,22 @@ app/
 ├── services/            # ビジネスロジック (gmail_service, email_parser, paypay_parser)
 ├── templates/           # Jinja2 テンプレート
 └── static/
+tests/                  # unittestテスト
 ```
 
 ## DBマイグレーション方針
 
-Alembicは使用していない。カラム追加は `app/__init__.py` の `_migrate_db()` に `ALTER TABLE` を追記する（try/exceptで既存カラムを無視）。
+依存関係にはAlembicが含まれているが、現状のDBマイグレーションには使用していない。カラム追加は `app/__init__.py` の `_migrate_db()` に、PostgreSQL用とSQLite用の `ALTER TABLE` をそれぞれ追記する。PostgreSQLでは `IF NOT EXISTS` を使い、SQLiteでは例外処理で既存カラムを無視する。
 
 ```python
-migrations = [
-    "ALTER TABLE transactions ADD COLUMN new_column VARCHAR(200)",
-]
+if is_postgres:
+    migrations = [
+        "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS new_column VARCHAR(200)",
+    ]
+else:
+    migrations = [
+        "ALTER TABLE transactions ADD COLUMN new_column VARCHAR(200)",
+    ]
 ```
 
 `db.create_all()` は新テーブルの作成のみ。既存テーブルへのカラム追加には必ず `_migrate_db()` を使う。
@@ -72,6 +84,14 @@ migrations = [
 - 新しいUIコンポーネントを追加する場合はBootstrapの既存クラスを優先して使う
 - 色やレイアウトの大幅な変更は事前にユーザーに確認する
 
-## 不明点は必ず確認
+## テスト
 
-実装方針・仕様・削除・破壊的変更など、少しでも判断に迷う場合はコードを書く前にユーザーに質問する。
+```bash
+uv run python -m unittest discover -s tests -v
+```
+
+変更内容に応じて関連テストを実行し、必要ならテストを追加・更新する。
+
+## 判断が必要な変更
+
+既存コードと本ガイドから安全に判断できる範囲では作業を進める。仕様を大きく左右する選択、データ削除、破壊的変更、既存データや本番環境に影響する変更は、実施前にユーザーへ確認する。
