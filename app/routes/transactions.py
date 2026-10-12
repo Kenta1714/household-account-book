@@ -1,7 +1,8 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from app.extensions import db
 from app.models import Transaction, Category
-from datetime import date, datetime
+from app.validators import validate_transaction_form
+from datetime import date
 
 bp = Blueprint("transactions", __name__, url_prefix="/transactions")
 
@@ -44,15 +45,17 @@ def index():
 def new():
     categories = Category.query.order_by(Category.name).all()
     if request.method == "POST":
-        tx = Transaction(
-            date=datetime.strptime(request.form["date"], "%Y-%m-%d").date(),
-            amount=int(request.form["amount"]),
-            type=request.form["type"],
-            description=request.form["description"],
-            memo=request.form.get("memo"),
-            category_id=request.form.get("category_id") or None,
-            source="manual",
-        )
+        data, errors = validate_transaction_form(request.form)
+        if errors:
+            return render_template(
+                "transactions/form.html",
+                categories=categories,
+                tx=None,
+                values=request.form,
+                errors=errors,
+            ), 400
+
+        tx = Transaction(**data, source="manual")
         db.session.add(tx)
         db.session.commit()
         flash("追加しました", "success")
@@ -68,12 +71,18 @@ def edit(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     categories = Category.query.order_by(Category.name).all()
     if request.method == "POST":
-        tx.date = datetime.strptime(request.form["date"], "%Y-%m-%d").date()
-        tx.amount = int(request.form["amount"])
-        tx.type = request.form["type"]
-        tx.description = request.form["description"]
-        tx.memo = request.form.get("memo")
-        tx.category_id = request.form.get("category_id") or None
+        data, errors = validate_transaction_form(request.form)
+        if errors:
+            return render_template(
+                "transactions/form.html",
+                categories=categories,
+                tx=tx,
+                values=request.form,
+                errors=errors,
+            ), 400
+
+        for field, value in data.items():
+            setattr(tx, field, value)
         db.session.commit()
         flash("更新しました", "success")
         return redirect(url_for("transactions.index",

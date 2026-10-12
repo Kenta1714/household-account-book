@@ -1,6 +1,6 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from app.models import ScanLog
-from app.services.paypay_parser import import_csv
+from app.services.paypay_parser import CsvValidationError, import_csv
 
 bp = Blueprint("paypay", __name__, url_prefix="/paypay")
 
@@ -14,7 +14,7 @@ def index():
 @bp.route("/upload", methods=["POST"])
 def upload():
     file = request.files.get("csv_file")
-    if not file or not file.filename.endswith(".csv"):
+    if not file or not file.filename.lower().endswith(".csv"):
         flash("CSVファイルを選択してください", "danger")
         return redirect(url_for("paypay.index"))
 
@@ -24,5 +24,8 @@ def upload():
     try:
         result = import_csv(content, import_investment=import_investment)
         return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except CsvValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception:
+        current_app.logger.exception("PayPay CSVの取り込みに失敗しました")
+        return jsonify({"error": "CSVの取り込み中に予期しないエラーが発生しました"}), 500

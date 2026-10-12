@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from app.extensions import db
 from app.models import Category
+from app.validators import validate_category_form
 
 bp = Blueprint("categories", __name__, url_prefix="/categories")
 
@@ -13,18 +14,31 @@ DEFAULT_COLORS = [
 
 @bp.route("/")
 def index():
+    return _render_index()
+
+
+def _render_index(status=200, **context):
     categories = Category.query.order_by(Category.type, Category.name).all()
-    return render_template("categories/index.html",
-                           categories=categories, colors=DEFAULT_COLORS)
+    return render_template(
+        "categories/index.html",
+        categories=categories,
+        colors=DEFAULT_COLORS,
+        **context,
+    ), status
 
 
 @bp.route("/new", methods=["POST"])
 def new():
-    cat = Category(
-        name=request.form["name"],
-        type=request.form["type"],
-        color=request.form.get("color", "#6c757d"),
-    )
+    data, errors = validate_category_form(request.form)
+    if errors:
+        return _render_index(
+            400,
+            category_form=request.form,
+            category_errors=errors,
+            open_category_modal="newCatModal",
+        )
+
+    cat = Category(**data)
     db.session.add(cat)
     db.session.commit()
     flash("カテゴリを追加しました", "success")
@@ -34,9 +48,18 @@ def new():
 @bp.route("/<int:cat_id>/edit", methods=["POST"])
 def edit(cat_id):
     cat = Category.query.get_or_404(cat_id)
-    cat.name = request.form["name"]
-    cat.type = request.form["type"]
-    cat.color = request.form.get("color", cat.color)
+    data, errors = validate_category_form(request.form, default_color=cat.color)
+    if errors:
+        return _render_index(
+            400,
+            category_form=request.form,
+            category_errors=errors,
+            open_category_modal="editCatModal",
+            edit_category_id=cat.id,
+        )
+
+    for field, value in data.items():
+        setattr(cat, field, value)
     db.session.commit()
     flash("更新しました", "success")
     return redirect(url_for("categories.index"))

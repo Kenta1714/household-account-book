@@ -2,6 +2,8 @@
 {% block title %}カテゴリ - 家計簿{% endblock %}
 
 {% block content %}
+{% set category_values = category_form|default({}) %}
+{% set form_errors = category_errors|default({}) %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h4 class="mb-0"><i class="bi bi-tags"></i> カテゴリ管理</h4>
   <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newCatModal">
@@ -60,24 +62,36 @@
         <div class="modal-body">
           <div class="mb-3">
             <label class="form-label">名前</label>
-            <input type="text" name="name" class="form-control" required>
+            <input type="text" name="name" maxlength="100"
+                   class="form-control{% if open_category_modal|default('') == 'newCatModal' and form_errors.get('name') %} is-invalid{% endif %}"
+                   value="{{ category_values.get('name', '') if open_category_modal|default('') == 'newCatModal' else '' }}" required>
+            {% if open_category_modal|default('') == 'newCatModal' and form_errors.get('name') %}
+              <div class="invalid-feedback">{{ form_errors.name }}</div>
+            {% endif %}
           </div>
           <div class="mb-3">
             <label class="form-label">種別</label>
-            <select name="type" class="form-select">
-              <option value="expense">支出</option>
-              <option value="income">収入</option>
+            <select name="type" class="form-select{% if open_category_modal|default('') == 'newCatModal' and form_errors.get('type') %} is-invalid{% endif %}">
+              <option value="expense" {% if category_values.get('type', 'expense') == 'expense' %}selected{% endif %}>支出</option>
+              <option value="income" {% if category_values.get('type') == 'income' %}selected{% endif %}>収入</option>
             </select>
+            {% if open_category_modal|default('') == 'newCatModal' and form_errors.get('type') %}
+              <div class="invalid-feedback">{{ form_errors.type }}</div>
+            {% endif %}
           </div>
           <div class="mb-3">
             <label class="form-label">色</label>
             <div class="d-flex flex-wrap gap-1">
               {% for color in colors %}
-              <input type="radio" class="btn-check" name="color" id="nc_{{ color }}" value="{{ color }}">
+              <input type="radio" class="btn-check" name="color" id="nc_{{ color }}" value="{{ color }}"
+                     {% if category_values.get('color', colors[0]) == color %}checked{% endif %}>
               <label class="btn btn-sm p-2" for="nc_{{ color }}"
                      style="background:{{ color }};width:30px;height:30px;border-radius:50%;border:2px solid #fff"></label>
               {% endfor %}
             </div>
+            {% if open_category_modal|default('') == 'newCatModal' and form_errors.get('color') %}
+              <div class="text-danger small mt-1">{{ form_errors.color }}</div>
+            {% endif %}
           </div>
         </div>
         <div class="modal-footer">
@@ -92,7 +106,8 @@
 <div class="modal fade" id="editCatModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
-      <form method="post" id="editCatForm">
+      <form method="post" id="editCatForm"
+            {% if edit_category_id|default(None) %}action="{{ url_for('categories.edit', cat_id=edit_category_id) }}"{% endif %}>
         <div class="modal-header">
           <h5 class="modal-title">カテゴリ編集</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -100,24 +115,36 @@
         <div class="modal-body">
           <div class="mb-3">
             <label class="form-label">名前</label>
-            <input type="text" name="name" id="editCatName" class="form-control" required>
+            <input type="text" name="name" id="editCatName" maxlength="100"
+                   class="form-control{% if open_category_modal|default('') == 'editCatModal' and form_errors.get('name') %} is-invalid{% endif %}"
+                   value="{{ category_values.get('name', '') if open_category_modal|default('') == 'editCatModal' else '' }}" required>
+            {% if open_category_modal|default('') == 'editCatModal' and form_errors.get('name') %}
+              <div class="invalid-feedback">{{ form_errors.name }}</div>
+            {% endif %}
           </div>
           <div class="mb-3">
             <label class="form-label">種別</label>
-            <select name="type" id="editCatType" class="form-select">
-              <option value="expense">支出</option>
-              <option value="income">収入</option>
+            <select name="type" id="editCatType" class="form-select{% if open_category_modal|default('') == 'editCatModal' and form_errors.get('type') %} is-invalid{% endif %}">
+              <option value="expense" {% if category_values.get('type') == 'expense' %}selected{% endif %}>支出</option>
+              <option value="income" {% if category_values.get('type') == 'income' %}selected{% endif %}>収入</option>
             </select>
+            {% if open_category_modal|default('') == 'editCatModal' and form_errors.get('type') %}
+              <div class="invalid-feedback">{{ form_errors.type }}</div>
+            {% endif %}
           </div>
           <div class="mb-3">
             <label class="form-label">色</label>
             <div class="d-flex flex-wrap gap-1">
               {% for color in colors %}
-              <input type="radio" class="btn-check" name="color" id="ec_{{ color }}" value="{{ color }}">
+              <input type="radio" class="btn-check" name="color" id="ec_{{ color }}" value="{{ color }}"
+                     {% if open_category_modal|default('') == 'editCatModal' and category_values.get('color') == color %}checked{% endif %}>
               <label class="btn btn-sm p-2" for="ec_{{ color }}"
                      style="background:{{ color }};width:30px;height:30px;border-radius:50%;border:2px solid #fff"></label>
               {% endfor %}
             </div>
+            {% if open_category_modal|default('') == 'editCatModal' and form_errors.get('color') %}
+              <div class="text-danger small mt-1">{{ form_errors.color }}</div>
+            {% endif %}
           </div>
         </div>
         <div class="modal-footer">
@@ -154,5 +181,11 @@ document.querySelectorAll('.js-edit-category').forEach((button) => {
     );
   });
 });
+
+{% if open_category_modal|default(None) %}
+document.addEventListener('DOMContentLoaded', () => {
+  new bootstrap.Modal(document.getElementById({{ open_category_modal|tojson }})).show();
+});
+{% endif %}
 </script>
 {% endblock %}

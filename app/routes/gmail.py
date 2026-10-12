@@ -7,6 +7,7 @@ from app.extensions import db
 from app.models import EmailFormat, Category, ScanLog, ScanSkipDetail
 from app.services import gmail_service
 from app.services.email_parser import preview_extraction
+from app.validators import validate_email_format_form
 
 bp = Blueprint("gmail", __name__, url_prefix="/gmail")
 
@@ -42,6 +43,10 @@ def _get_scan_interval_minutes() -> int:
 
 @bp.route("/")
 def index():
+    return _render_index()
+
+
+def _render_index(status=200, **context):
     authenticated = gmail_service.is_authenticated()
     formats = EmailFormat.query.order_by(EmailFormat.company_name).all()
     manual_logs = (ScanLog.query.filter_by(source="gmail", trigger="manual")
@@ -50,14 +55,17 @@ def index():
                  .order_by(ScanLog.scanned_at.desc()).limit(5).all())
     categories = Category.query.order_by(Category.name).all()
     scan_interval = _get_scan_interval_minutes()
-    return render_template("gmail/index.html",
-                           authenticated=authenticated,
-                           formats=formats,
-                           manual_logs=manual_logs,
-                           auto_logs=auto_logs,
-                           categories=categories,
-                           scan_interval=scan_interval,
-                           valid_scan_intervals=VALID_SCAN_INTERVALS)
+    return render_template(
+        "gmail/index.html",
+        authenticated=authenticated,
+        formats=formats,
+        manual_logs=manual_logs,
+        auto_logs=auto_logs,
+        categories=categories,
+        scan_interval=scan_interval,
+        valid_scan_intervals=VALID_SCAN_INTERVALS,
+        **context,
+    ), status
 
 
 @bp.route("/auth")
@@ -125,20 +133,16 @@ def scan_progress():
 
 @bp.route("/formats/new", methods=["POST"])
 def format_new():
-    ef = EmailFormat(
-        company_name=request.form["company_name"],
-        sender_email=request.form["sender_email"],
-        amount_prefix=request.form["amount_prefix"],
-        amount_suffix=request.form["amount_suffix"],
-        content_prefix=request.form.get("content_prefix") or None,
-        content_suffix=request.form.get("content_suffix") or None,
-        card_name_mode=request.form.get("card_name_mode") or None,
-        card_name_prefix=request.form.get("card_name_prefix") or None,
-        card_name_suffix=request.form.get("card_name_suffix") or None,
-        card_name_keywords=request.form.get("card_name_keywords") or None,
-        default_category_id=request.form.get("default_category_id") or None,
-        sample_text=request.form.get("sample_text"),
-    )
+    data, errors = validate_email_format_form(request.form)
+    if errors:
+        return _render_index(
+            400,
+            format_form=request.form,
+            format_errors=errors,
+            open_format_modal=True,
+        )
+
+    ef = EmailFormat(**data)
     db.session.add(ef)
     db.session.commit()
     flash(f"「{ef.company_name}」のフォーマットを登録しました", "success")

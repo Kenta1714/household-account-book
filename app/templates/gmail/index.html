@@ -2,6 +2,8 @@
 {% block title %}Gmail連携 - 家計簿{% endblock %}
 
 {% block content %}
+{% set format_values = format_form|default({}) %}
+{% set form_errors = format_errors|default({}) %}
 <h4 class="mb-4"><i class="bi bi-envelope"></i> Gmail連携</h4>
 
 <!-- スキャン中オーバーレイ -->
@@ -210,32 +212,48 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
+          {% if form_errors %}
+          <div class="alert alert-danger" role="alert">
+            <div class="fw-bold mb-1">入力内容を確認してください</div>
+            <ul class="mb-0">
+              {% for message in form_errors.values() %}<li>{{ message }}</li>{% endfor %}
+            </ul>
+          </div>
+          {% endif %}
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label">カード名</label>
-              <input type="text" name="company_name" class="form-control" placeholder="例: 楽天カード" required>
+              <input type="text" name="company_name" maxlength="100"
+                     class="form-control{% if form_errors.get('company_name') %} is-invalid{% endif %}"
+                     value="{{ format_values.get('company_name', '') }}" placeholder="例: 楽天カード" required>
             </div>
             <div class="col-md-6">
               <label class="form-label">送信元メールアドレス</label>
-              <input type="text" name="sender_email" class="form-control" placeholder="例: info@rakuten-card.co.jp" required>
+              <input type="email" name="sender_email" maxlength="255"
+                     class="form-control{% if form_errors.get('sender_email') %} is-invalid{% endif %}"
+                     value="{{ format_values.get('sender_email', '') }}"
+                     placeholder="例: info@rakuten-card.co.jp" required>
             </div>
             <div class="col-12">
               <label class="form-label">サンプルメール本文</label>
-              <textarea id="sampleText" name="sample_text" class="form-control font-monospace" rows="6"
-                        placeholder="カード会社から届いたメールの本文をここに貼り付けてください"></textarea>
+              <textarea id="sampleText" name="sample_text" maxlength="20000"
+                        class="form-control font-monospace{% if form_errors.get('sample_text') %} is-invalid{% endif %}" rows="6"
+                        placeholder="カード会社から届いたメールの本文をここに貼り付けてください">{{ format_values.get('sample_text', '') }}</textarea>
             </div>
 
             <!-- 金額抽出 -->
             <div class="col-12"><hr class="my-1"><p class="mb-1 fw-bold small text-muted">金額の抽出</p></div>
             <div class="col-md-5">
               <label class="form-label">金額直前のテキスト</label>
-              <input type="text" id="amountPrefix" name="amount_prefix" class="form-control"
-                     placeholder="例: ご利用金額：" required>
+              <input type="text" id="amountPrefix" name="amount_prefix" maxlength="255"
+                     class="form-control{% if form_errors.get('amount_prefix') %} is-invalid{% endif %}"
+                     value="{{ format_values.get('amount_prefix', '') }}" placeholder="例: ご利用金額：" required>
             </div>
             <div class="col-md-5">
               <label class="form-label">金額直後のテキスト</label>
-              <input type="text" id="amountSuffix" name="amount_suffix" class="form-control"
-                     placeholder="例: 円" required>
+              <input type="text" id="amountSuffix" name="amount_suffix" maxlength="255"
+                     class="form-control{% if form_errors.get('amount_suffix') %} is-invalid{% endif %}"
+                     value="{{ format_values.get('amount_suffix', '') }}" placeholder="例: 円" required>
             </div>
             <div class="col-md-2 d-flex align-items-end">
               <button type="button" class="btn btn-outline-secondary w-100" id="previewAmountBtn">確認</button>
@@ -248,13 +266,15 @@
             <div class="col-12"><hr class="my-1"><p class="mb-1 fw-bold small text-muted">ご利用内容の抽出（任意）</p></div>
             <div class="col-md-5">
               <label class="form-label">内容直前のテキスト</label>
-              <input type="text" id="contentPrefix" name="content_prefix" class="form-control"
-                     placeholder="例: ご利用店名：">
+              <input type="text" id="contentPrefix" name="content_prefix" maxlength="255"
+                     class="form-control{% if form_errors.get('content_prefix') or form_errors.get('content') %} is-invalid{% endif %}"
+                     value="{{ format_values.get('content_prefix', '') }}" placeholder="例: ご利用店名：">
             </div>
             <div class="col-md-5">
               <label class="form-label">内容直後のテキスト</label>
-              <input type="text" id="contentSuffix" name="content_suffix" class="form-control"
-                     placeholder="例: （改行など）">
+              <input type="text" id="contentSuffix" name="content_suffix" maxlength="255"
+                     class="form-control{% if form_errors.get('content_suffix') or form_errors.get('content') %} is-invalid{% endif %}"
+                     value="{{ format_values.get('content_suffix', '') }}" placeholder="例: （改行など）">
             </div>
             <div class="col-md-2 d-flex align-items-end">
               <button type="button" class="btn btn-outline-secondary w-100" id="previewContentBtn">確認</button>
@@ -269,17 +289,17 @@
               <div class="d-flex gap-3">
                 <div class="form-check">
                   <input class="form-check-input" type="radio" name="card_name_mode" id="cardNameModeNone"
-                         value="" checked onchange="updateCardNameMode(this.value)">
+                         value="" {% if not format_values.get('card_name_mode') %}checked{% endif %} onchange="updateCardNameMode(this.value)">
                   <label class="form-check-label" for="cardNameModeNone">なし</label>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="radio" name="card_name_mode" id="cardNameModeExtract"
-                         value="extract" onchange="updateCardNameMode(this.value)">
+                         value="extract" {% if format_values.get('card_name_mode') == 'extract' %}checked{% endif %} onchange="updateCardNameMode(this.value)">
                   <label class="form-check-label" for="cardNameModeExtract">前後テキストで抽出</label>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="radio" name="card_name_mode" id="cardNameModeKeyword"
-                         value="keyword" onchange="updateCardNameMode(this.value)">
+                         value="keyword" {% if format_values.get('card_name_mode') == 'keyword' %}checked{% endif %} onchange="updateCardNameMode(this.value)">
                   <label class="form-check-label" for="cardNameModeKeyword">キーワード検索</label>
                 </div>
               </div>
@@ -288,13 +308,15 @@
               <div class="row g-2">
                 <div class="col-md-5">
                   <label class="form-label small">カード名直前のテキスト</label>
-                  <input type="text" id="cardNamePrefix" name="card_name_prefix" class="form-control"
-                         placeholder="例: カード名称：">
+                  <input type="text" id="cardNamePrefix" name="card_name_prefix" maxlength="255"
+                         class="form-control{% if form_errors.get('card_name_prefix') %} is-invalid{% endif %}"
+                         value="{{ format_values.get('card_name_prefix', '') }}" placeholder="例: カード名称：">
                 </div>
                 <div class="col-md-5">
                   <label class="form-label small">カード名直後のテキスト</label>
-                  <input type="text" id="cardNameSuffix" name="card_name_suffix" class="form-control"
-                         placeholder="例: （改行など）">
+                  <input type="text" id="cardNameSuffix" name="card_name_suffix" maxlength="255"
+                         class="form-control{% if form_errors.get('card_name_suffix') %} is-invalid{% endif %}"
+                         value="{{ format_values.get('card_name_suffix', '') }}" placeholder="例: （改行など）">
                 </div>
                 <div class="col-md-2 d-flex align-items-end">
                   <button type="button" class="btn btn-outline-secondary w-100" id="previewCardNameBtn">確認</button>
@@ -308,8 +330,9 @@
               <div class="row g-2">
                 <div class="col-md-10">
                   <label class="form-label small">キーワード（カンマ区切り）</label>
-                  <input type="text" id="cardNameKeywords" name="card_name_keywords" class="form-control"
-                         placeholder="例: Aカード,Bカード,Cカード">
+                  <input type="text" id="cardNameKeywords" name="card_name_keywords" maxlength="2000"
+                         class="form-control{% if form_errors.get('card_name_keywords') %} is-invalid{% endif %}"
+                         value="{{ format_values.get('card_name_keywords', '') }}" placeholder="例: Aカード,Bカード,Cカード">
                   <div class="form-text">メール本文に含まれる最初のキーワードがカード名として使われます</div>
                 </div>
                 <div class="col-md-2 d-flex align-items-end">
@@ -323,10 +346,10 @@
 
             <div class="col-md-6">
               <label class="form-label">デフォルトカテゴリ（任意）</label>
-              <select name="default_category_id" class="form-select">
+              <select name="default_category_id" class="form-select{% if form_errors.get('default_category_id') %} is-invalid{% endif %}">
                 <option value="">未分類</option>
                 {% for cat in categories %}
-                  <option value="{{ cat.id }}">{{ cat.name }}</option>
+                  <option value="{{ cat.id }}" {% if format_values.get('default_category_id', '')|string == cat.id|string %}selected{% endif %}>{{ cat.name }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -565,5 +588,12 @@ function escHtml(str) {
   if (!str) return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+{% if open_format_modal|default(false) %}
+document.addEventListener('DOMContentLoaded', () => {
+  updateCardNameMode({{ (format_form.get('card_name_mode', '') if format_form is defined else '')|tojson }});
+  new bootstrap.Modal(document.getElementById('newFormatModal')).show();
+});
+{% endif %}
 </script>
 {% endblock %}

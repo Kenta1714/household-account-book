@@ -95,8 +95,10 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
       document.getElementById('uploadStatusText').textContent = '取り込み完了';
       document.getElementById('uploadProgressText').style.display = '';
       document.getElementById('uploadProgressText').textContent =
-        `${data.added}件追加 / ${data.total_found}件検出`;
-      setTimeout(() => location.reload(), 1500);
+        `${data.added}件追加 / ${data.total_found}件検出` +
+        (data.errors && data.errors.length ? `（${data.errors.length}件の入力エラー）\n${data.errors.join('\n')}` : '');
+      document.getElementById('uploadProgressText').style.whiteSpace = 'pre-wrap';
+      setTimeout(() => location.reload(), data.errors && data.errors.length ? 5000 : 1500);
     }
   } catch (err) {
     overlay.style.display = 'none';
