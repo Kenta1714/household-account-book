@@ -4,24 +4,7 @@ from flask import Flask, request, Response, jsonify, render_template
 from flask_wtf.csrf import CSRFError
 from app.config import configure_app
 from app.extensions import csrf, db, scheduler
-from app.models import Category
 from werkzeug.serving import is_running_from_reloader
-
-
-DEFAULT_CATEGORIES = [
-    ("食費", "expense", "#e15759"),
-    ("日用品", "expense", "#f28e2b"),
-    ("交通費", "expense", "#4e79a7"),
-    ("光熱費", "expense", "#76b7b2"),
-    ("通信費", "expense", "#b07aa1"),
-    ("娯楽", "expense", "#ff9da7"),
-    ("医療", "expense", "#59a14f"),
-    ("衣服", "expense", "#edc948"),
-    ("その他支出", "expense", "#adb5bd"),
-    ("給与", "income", "#59a14f"),
-    ("副収入", "income", "#4e79a7"),
-    ("その他収入", "income", "#76b7b2"),
-]
 
 
 def _apply_basic_auth(app):
@@ -83,11 +66,6 @@ def create_app(test_config=None):
         return send_from_directory(app.static_folder, "apple-touch-icon.png",
                                    mimetype="image/png")
 
-    with app.app_context():
-        db.create_all()
-        _migrate_db()
-        _seed_categories()
-
     # Gmail定期スキャン（間隔はDBのscan_interval_minutes設定値、デフォルト30分）
     # Flaskのdebugリローダーが起動する子プロセスではスケジューラを起動しない
     # shell・トークン移行などの保守コマンドではバックグラウンド取込を起動しない。
@@ -116,42 +94,3 @@ def create_app(test_config=None):
         scheduler.start()
 
     return app
-
-
-def _migrate_db():
-    """既存DBに新カラムを追加する簡易マイグレーション（PostgreSQL / SQLite 両対応）"""
-    # PostgreSQL では "IF NOT EXISTS" が使える（9.6+）
-    # SQLite は IF NOT EXISTS に非対応なので try/except でエラーを無視する
-    is_postgres = db.engine.url.get_backend_name() == "postgresql"
-    if is_postgres:
-        migrations = [
-            "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS source_detail VARCHAR(200)",
-            "ALTER TABLE email_formats ADD COLUMN IF NOT EXISTS card_name_mode VARCHAR(20)",
-            "ALTER TABLE email_formats ADD COLUMN IF NOT EXISTS card_name_prefix VARCHAR(255)",
-            "ALTER TABLE email_formats ADD COLUMN IF NOT EXISTS card_name_suffix VARCHAR(255)",
-            "ALTER TABLE email_formats ADD COLUMN IF NOT EXISTS card_name_keywords TEXT",
-            "ALTER TABLE scan_logs ADD COLUMN IF NOT EXISTS trigger VARCHAR(10)",
-        ]
-    else:
-        migrations = [
-            "ALTER TABLE transactions ADD COLUMN source_detail VARCHAR(200)",
-            "ALTER TABLE email_formats ADD COLUMN card_name_mode VARCHAR(20)",
-            "ALTER TABLE email_formats ADD COLUMN card_name_prefix VARCHAR(255)",
-            "ALTER TABLE email_formats ADD COLUMN card_name_suffix VARCHAR(255)",
-            "ALTER TABLE email_formats ADD COLUMN card_name_keywords TEXT",
-            "ALTER TABLE scan_logs ADD COLUMN trigger VARCHAR(10)",
-        ]
-    for sql in migrations:
-        try:
-            db.session.execute(db.text(sql))
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-    db.session.remove()  # マイグレーション後のセッションを確実にクリーンにする
-
-
-def _seed_categories():
-    if Category.query.count() == 0:
-        for name, type_, color in DEFAULT_CATEGORIES:
-            db.session.add(Category(name=name, type=type_, color=color, is_default=True))
-        db.session.commit()

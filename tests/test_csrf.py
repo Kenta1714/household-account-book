@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from app.extensions import db
 from app.models import Category, EmailFormat, Setting, Transaction
-from test_configuration import IsolatedEnvironment
+from tests.test_configuration import IsolatedEnvironment
 
 
 class FormParser(HTMLParser):

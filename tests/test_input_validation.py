@@ -12,6 +12,7 @@ from unittest.mock import patch
 from app import create_app
 from app.extensions import db
 from app.models import Category, EmailFormat, ScanLog, Transaction
+from tests.helpers import migrate_database, seed_categories
 
 
 CLIENT_CONFIG = {
@@ -47,6 +48,8 @@ class InputValidationTests(unittest.TestCase):
         self.addCleanup(dotenv.stop)
 
         self.app = create_app({"TESTING": True, "SCHEDULER_ENABLED": False})
+        migrate_database(self.app)
+        seed_categories(self.app)
         self.client = self.app.test_client()
         self.headers = {
             "Authorization": "Basic " + base64.b64encode(b"test-user:test-password").decode()

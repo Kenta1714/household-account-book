@@ -33,7 +33,7 @@ GmailトークンはDB保存に統一し、通信・DB障害時は削除しな�
 
 ```
 app/
-├── __init__.py          # create_app(), DB初期化, スケジューラ起動
+├── __init__.py          # create_app(), 拡張機能・Blueprint登録, スケジューラ起動
 ├── commands.py          # Flask CLIコマンド
 ├── config.py
 ├── extensions.py        # db, scheduler インスタンス
@@ -43,24 +43,19 @@ app/
 ├── templates/           # Jinja2 テンプレート
 └── static/
 tests/                  # unittestテスト
+migrations/             # Alembic設定・バージョン別DB変更
 ```
 
 ## DBマイグレーション方針
 
-依存関係にはAlembicが含まれているが、現状のDBマイグレーションには使用していない。カラム追加は `app/__init__.py` の `_migrate_db()` に、PostgreSQL用とSQLite用の `ALTER TABLE` をそれぞれ追記する。PostgreSQLでは `IF NOT EXISTS` を使い、SQLiteでは例外処理で既存カラムを無視する。
+DBスキーマはAlembicで管理する。`create_app()` では `db.create_all()`、マイグレーション、初期データ登録を実行しない。アプリの起動前に次を明示的に実行する。
 
-```python
-if is_postgres:
-    migrations = [
-        "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS new_column VARCHAR(200)",
-    ]
-else:
-    migrations = [
-        "ALTER TABLE transactions ADD COLUMN new_column VARCHAR(200)",
-    ]
+```bash
+APP_ENV=development uv run alembic upgrade head
+APP_ENV=development uv run flask --app app:create_app seed-categories
 ```
 
-`db.create_all()` は新テーブルの作成のみ。既存テーブルへのカラム追加には必ず `_migrate_db()` を使う。
+モデルやテーブルを変更する場合は `migrations/versions/` に新しいリビジョンを追加する。マイグレーション例外を握りつぶさず、失敗時はデプロイを停止する。既存データ保護のため、DB構造を確認せず `alembic stamp` を使用しない。初期カテゴリは冪等な `seed-categories` CLIで登録し、既存カテゴリを変更しない。
 
 ## 重要な設計パターン
 

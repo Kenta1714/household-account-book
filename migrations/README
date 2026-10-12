@@ -1,0 +1,4 @@
+Alembic database migrations for the household account book application.
+
+Run `APP_ENV=development uv run alembic upgrade head` before starting the
+application. Production uses the same command with its configured environment.

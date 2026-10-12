@@ -12,6 +12,7 @@ from flask import Flask
 from flask.cli import FlaskGroup
 from click.testing import CliRunner
 from google.auth.exceptions import RefreshError, TransportError
+from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 
 from app import create_app
@@ -19,6 +20,7 @@ from app.config import ConfigError, configure_app
 from app.extensions import db
 from app.models import Category, Setting, Transaction
 from app.services import gmail_service
+from tests.helpers import check_database_schema, migrate_database, seed_categories
 
 
 CLIENT_CONFIG = {
@@ -69,10 +71,13 @@ class IsolatedEnvironment(unittest.TestCase):
         })
         os.environ.pop("OAUTHLIB_INSECURE_TRANSPORT", None)
 
-    def make_app(self, **overrides):
+    def make_app(self, *, prepare_database=True, **overrides):
         # Explicit test overrides only; all required environment settings are still validated.
         app = create_app({"TESTING": True, "SCHEDULER_ENABLED": False, **overrides})
         self.addCleanup(self.dispose, app)
+        if prepare_database:
+            migrate_database(app)
+            seed_categories(app)
         return app
 
     @staticmethod
@@ -193,6 +198,69 @@ class ApplicationTests(IsolatedEnvironment):
     def store_token(self):
         db.session.add(Setting(key="gmail_token", value=TOKEN))
         db.session.commit()
+
+    def test_create_app_does_not_create_or_migrate_tables(self):
+        separate_database = self.root / "startup-only.db"
+        app = self.make_app(
+            prepare_database=False,
+            SQLALCHEMY_DATABASE_URI="sqlite:///" + str(separate_database),
+        )
+        with app.app_context():
+            self.assertEqual(inspect(db.engine).get_table_names(), [])
+
+    def test_seed_categories_is_idempotent(self):
+        result = self.app.test_cli_runner().invoke(args=["seed-categories"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("0件", result.output)
+        with self.app.app_context():
+            self.assertEqual(Category.query.count(), 12)
+
+    def test_migration_schema_matches_models(self):
+        check_database_schema(self.app)
+
+    def test_initial_migration_preserves_legacy_database_data(self):
+        legacy_database = self.root / "legacy.db"
+        app = self.make_app(
+            prepare_database=False,
+            SQLALCHEMY_DATABASE_URI="sqlite:///" + str(legacy_database),
+        )
+        with app.app_context(), db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE categories ("
+                "id INTEGER PRIMARY KEY, name VARCHAR(100) NOT NULL, "
+                "type VARCHAR(10) NOT NULL, color VARCHAR(7), "
+                "is_default BOOLEAN, created_at DATETIME)"
+            )
+            connection.exec_driver_sql(
+                "CREATE TABLE transactions ("
+                "id INTEGER PRIMARY KEY, date DATE NOT NULL, amount INTEGER NOT NULL, "
+                "type VARCHAR(10) NOT NULL, description VARCHAR(255) NOT NULL, "
+                "memo TEXT, category_id INTEGER, source VARCHAR(20), "
+                "external_id VARCHAR(255) UNIQUE, created_at DATETIME, "
+                "FOREIGN KEY(category_id) REFERENCES categories(id))"
+            )
+            connection.exec_driver_sql(
+                "CREATE TABLE settings (key VARCHAR(100) PRIMARY KEY, value TEXT)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO categories (id, name, type) VALUES (1, '既存カテゴリ', 'expense')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO transactions "
+                "(id, date, amount, type, description, category_id) "
+                "VALUES (1, '2026-10-12', 500, 'expense', '既存取引', 1)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO settings (key, value) VALUES ('gmail_token', 'existing-token')"
+            )
+
+        migrate_database(app)
+
+        with app.app_context():
+            columns = {column["name"] for column in inspect(db.engine).get_columns("transactions")}
+            self.assertIn("source_detail", columns)
+            self.assertEqual(db.session.get(Transaction, 1).description, "既存取引")
+            self.assertEqual(db.session.get(Setting, "gmail_token").value, "existing-token")
 
     def test_basic_auth_is_required_and_ping_remains_public(self):
         self.assertEqual(self.client.get("/").status_code, 401)
@@ -412,6 +480,7 @@ class SchedulerTests(IsolatedEnvironment):
 
     def test_debug_reloader_child_starts_scheduler_once(self):
         os.environ.update({"FLASK_DEBUG": "1", "WERKZEUG_RUN_MAIN": "true"})
+        self.make_app()
         with patch("app.scheduler") as scheduler:
             scheduler.running = False
             self.make_app(SCHEDULER_ENABLED=True)

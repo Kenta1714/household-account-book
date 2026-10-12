@@ -20,6 +20,8 @@ Flask製の家計簿アプリ。開発・本番は `APP_ENV` で明示的に切�
 | `CREDENTIALS_FILE` | `credentials.json` など。相対パスはプロジェクトルートから解決 |
 
 ```bash
+APP_ENV=development uv run alembic upgrade head
+APP_ENV=development uv run flask --app app:create_app seed-categories
 APP_ENV=development uv run flask --app app:create_app run --debug --port 8080
 ```
 
@@ -54,6 +56,15 @@ Build Command:
 pip install uv && uv sync --frozen
 ```
 
+Pre-Deploy Command:
+
+```sh
+FLASK_SKIP_DOTENV=1 uv run alembic upgrade head && FLASK_SKIP_DOTENV=1 uv run flask --app app:create_app seed-categories
+```
+
+DBマイグレーションと初期カテゴリ登録が成功した場合だけ、新しいアプリを起動します。
+`seed-categories` は不足している既定カテゴリだけを追加し、既存カテゴリは変更しません。
+
 Start Command（既存設定を維持できます）:
 
 ```sh
@@ -66,9 +77,15 @@ uv run gunicorn run:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
 
 ## 既存データ・Gmail連携の維持
 
-この変更ではモデル・DBスキーマ・既存の `settings.gmail_token` の保存形式を変更していません。
-既存DBへの接続を維持すれば、取引・カテゴリ・設定・DB保存済みのGmailトークンは引き続き使用されます。
-デプロイ前には通常のDBバックアップも取得してください。
+DBスキーマはAlembicで管理します。`create_app()` はテーブル作成・カラム追加・初期データ登録を行いません。
+新規DBと、この変更より前から使用しているDBのどちらも、最初に `alembic upgrade head` を実行してください。
+初回マイグレーションは既存テーブルを検出し、不足している従来カラムだけを追加するため、
+取引・カテゴリ・設定・DB保存済みのGmailトークンを削除しません。
+マイグレーションが失敗した場合はエラーで停止します。
+既存DBへの接続を維持し、デプロイ前には通常のDBバックアップも取得してください。
+
+Alembicの履歴だけを変更する `alembic stamp` は、DB構造と履歴を食い違わせる可能性があるため使用しないでください。
+初回マイグレーションは既存DBの引継ぎも担当するため、`downgrade` には対応していません。
 
 トークンの読込・保存先は両環境でDBに統一しました。
 DB障害・一時的なGoogle通信エラーでトークンを削除したり、ファイル保存へ切り替えたりしません。
