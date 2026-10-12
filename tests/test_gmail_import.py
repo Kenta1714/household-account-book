@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 from flask import Flask
+from sqlalchemy import event
 
 from app.extensions import db
 from app.models import EmailFormat, ScanLog, ScanSkipDetail, Transaction
@@ -28,6 +29,8 @@ class GmailImportTests(unittest.TestCase):
         db.init_app(self.app)
         self.app.register_blueprint(bp)
         migrate_database(self.app)
+        # Alembicのログ設定で、前のテストが作成したロガーが無効化される場合がある。
+        self.app.logger.disabled = False
         self.context = self.app.app_context()
         self.context.push()
         self.addCleanup(self._dispose_app)
@@ -226,7 +229,7 @@ class GmailImportTests(unittest.TestCase):
         ]
         with self.assertRaisesRegex(RuntimeError, "Gmail通信失敗"):
             gs.scan_emails()
-        db.session.rollback()
+        self.assertEqual(Transaction.query.count(), 0)
         self.assertEqual(ScanLog.query.one().id, previous_id)
         self.assertEqual(ScanLog.query.one().scanned_at, previous_start.replace(tzinfo=None))
 
@@ -253,28 +256,46 @@ class GmailImportTests(unittest.TestCase):
         self.assertEqual(ScanLog.query.count(), 0)
         self.messages.list.assert_not_called()
 
-    def test_log_commit_failure_does_not_advance_checkpoint(self):
+    def test_log_save_failure_rolls_back_transactions_and_allows_retry(self):
         previous_id = self._previous_scan((STARTED_AT - timedelta(hours=1)).replace(tzinfo=None))
         self._set_messages({"valid": "Mon, 5 Oct 2026 12:34:56 +0900"})
-        commit = db.session.commit
-        calls = 0
 
-        def fail_log_commit():
-            nonlocal calls
-            calls += 1
-            if calls == 2:
-                raise RuntimeError("ログ保存失敗")
-            commit()
+        def fail_log_insert(mapper, connection, target):
+            raise RuntimeError("ログ保存失敗")
 
-        with patch.object(db.session, "commit", side_effect=fail_log_commit):
+        event.listen(ScanLog, "before_insert", fail_log_insert)
+        try:
             with self.assertRaisesRegex(RuntimeError, "ログ保存失敗"):
                 gs.scan_emails()
-        db.session.rollback()
+        finally:
+            event.remove(ScanLog, "before_insert", fail_log_insert)
         self.assertEqual(ScanLog.query.one().id, previous_id)
+        self.assertEqual(Transaction.query.count(), 0)
         result = gs.scan_emails()
-        self.assertEqual(result["added"], 0)
-        self.assertEqual(result["skip_reasons"]["duplicate"], 1)
+        self.assertEqual(result["added"], 1)
         self.assertEqual(Transaction.query.count(), 1)
+
+    def test_detail_save_failure_restores_previous_details_and_transactions(self):
+        previous_id = self._previous_scan((STARTED_AT - timedelta(hours=1)).replace(tzinfo=None))
+        db.session.add(ScanSkipDetail(scan_log_id=previous_id, reason="no_amount"))
+        db.session.commit()
+        self._set_messages({
+            "valid": "Mon, 5 Oct 2026 12:34:56 +0900",
+            "invalid": "not a date",
+        })
+
+        def fail_detail_insert(mapper, connection, target):
+            raise RuntimeError("詳細保存失敗")
+
+        event.listen(ScanSkipDetail, "before_insert", fail_detail_insert)
+        try:
+            with self.assertRaisesRegex(RuntimeError, "詳細保存失敗"):
+                gs.scan_emails()
+        finally:
+            event.remove(ScanSkipDetail, "before_insert", fail_detail_insert)
+        self.assertEqual(Transaction.query.count(), 0)
+        self.assertEqual(ScanLog.query.one().id, previous_id)
+        self.assertEqual(ScanSkipDetail.query.one().reason, "no_amount")
 
 
 if __name__ == "__main__":

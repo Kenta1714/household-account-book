@@ -184,6 +184,14 @@ def _run_scan(batch: bool, trigger: str, *, app=None) -> dict:
 
 
 def _do_scan(batch: bool, trigger: str = "auto") -> dict:
+    try:
+        return _import_emails(batch, trigger)
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+def _import_emails(batch: bool, trigger: str) -> dict:
     scan_started_at = datetime.now(timezone.utc)
     service = get_gmail_service()
     formats = EmailFormat.query.all()
@@ -311,8 +319,6 @@ def _do_scan(batch: bool, trigger: str = "auto") -> dict:
         if not page_token:
             break
 
-    db.session.commit()
-
     skipped = sum(skip_reasons.values())
     detail_str = (
         f"重複:{skip_reasons['duplicate']} / "
@@ -347,6 +353,7 @@ def _do_scan(batch: bool, trigger: str = "auto") -> dict:
             extra_info=sd["extra_info"],
         ))
 
+    # 取引・取込ログ・スキップ詳細をまとめて確定する。
     db.session.commit()
 
     return {"total_found": total_found, "added": added, "skipped": skipped,

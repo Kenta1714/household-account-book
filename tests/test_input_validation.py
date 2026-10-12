@@ -9,6 +9,8 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
+from sqlalchemy import event
+
 from app import create_app
 from app.extensions import db
 from app.models import Category, EmailFormat, ScanLog, Transaction
@@ -237,6 +239,35 @@ class InputValidationTests(unittest.TestCase):
             headers=self.headers,
             content_type="multipart/form-data",
         )
+
+    def test_paypay_log_failure_rolls_back_and_hides_internal_error(self):
+        csv_text = (
+            "取引番号,取引内容,取引日,出金金額（円）,入金金額（円）\n"
+            "A1,支払い,2026/10/12,100,-\n"
+        )
+
+        def fail_log_insert(mapper, connection, target):
+            raise RuntimeError("internal database detail")
+
+        event.listen(ScanLog, "before_insert", fail_log_insert)
+        try:
+            with self.app.app_context(), self.assertLogs(self.app.logger, level="ERROR") as logs:
+                response = self._upload_csv(csv_text)
+                self.assertEqual(Transaction.query.count(), 0)
+                self.assertEqual(ScanLog.query.count(), 0)
+        finally:
+            event.remove(ScanLog, "before_insert", fail_log_insert)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json, {
+            "error": "CSVの取り込み中に予期しないエラーが発生しました",
+        })
+        self.assertIn("internal database detail", "\n".join(logs.output))
+        response = self._upload_csv(csv_text)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["added"], 1)
+        with self.app.app_context():
+            self.assertEqual(Transaction.query.count(), 1)
+            self.assertEqual(ScanLog.query.one().added, 1)
 
     def test_paypay_csv_rejects_missing_required_column_before_saving(self):
         response = self._upload_csv(

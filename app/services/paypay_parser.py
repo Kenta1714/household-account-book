@@ -43,6 +43,14 @@ def parse_amount(value: str) -> int:
 
 def import_csv(file_content: bytes, import_investment: bool = False) -> dict:
     """PayPay CSVを解析してDBに保存する。重複はスキップ。"""
+    try:
+        return _import_csv(file_content, import_investment)
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+def _import_csv(file_content: bytes, import_investment: bool) -> dict:
     target_types = IMPORT_TYPES.copy()
     if import_investment:
         target_types.add("投資")
@@ -130,8 +138,6 @@ def import_csv(file_content: bytes, import_investment: bool = False) -> dict:
             errors.append(f"{line_number}行目: {exc}")
             skipped += 1
 
-    db.session.commit()
-
     log = ScanLog(
         source="paypay",
         total_found=total_found,
@@ -140,6 +146,7 @@ def import_csv(file_content: bytes, import_investment: bool = False) -> dict:
         detail="; ".join(errors) if errors else None,
     )
     db.session.add(log)
+    # 取引と取込ログを同じトランザクションで確定する。
     db.session.commit()
 
     return {
