@@ -2,7 +2,8 @@ import json
 import base64
 import threading
 from contextlib import nullcontext
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 
 from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
@@ -16,6 +17,7 @@ from app.models import Transaction, EmailFormat, ScanLog, ScanSkipDetail, Settin
 from app.services.email_parser import extract_amount, extract_content, extract_card_name
 
 _GMAIL_TOKEN_KEY = "gmail_token"
+_SCAN_OVERLAP = timedelta(minutes=5)
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
@@ -182,11 +184,13 @@ def _run_scan(batch: bool, trigger: str, *, app=None) -> dict:
 
 
 def _do_scan(batch: bool, trigger: str = "auto") -> dict:
+    scan_started_at = datetime.now(timezone.utc)
     service = get_gmail_service()
     formats = EmailFormat.query.all()
     if not formats:
         return {"total_found": 0, "added": 0, "skipped": 0,
-                "skip_reasons": {"no_format": 0, "duplicate": 0, "no_amount": 0}}
+                "skip_reasons": {"no_format": 0, "duplicate": 0, "no_amount": 0,
+                                 "invalid_date": 0}}
 
     sender_query = " OR ".join(f"from:{ef.sender_email}" for ef in formats)
 
@@ -199,16 +203,17 @@ def _do_scan(batch: bool, trigger: str = "auto") -> dict:
             .first()
         )
         if last_log:
-            since_ts = int(last_log.scanned_at.timestamp())
-            query = f"after:{since_ts} ({sender_query})"
+            # DBの日時はUTCで保存される。サーバーのローカル時刻として解釈しない。
+            since_at = last_log.scanned_at.replace(tzinfo=timezone.utc) - _SCAN_OVERLAP
         else:
-            from datetime import timedelta
-            since_ts = int((datetime.utcnow() - timedelta(days=90)).timestamp())
-            query = f"after:{since_ts} ({sender_query})"
+            since_at = scan_started_at - timedelta(days=90)
+        since_ts = int(since_at.timestamp())
+        query = f"after:{since_ts} ({sender_query})"
 
     total_found = 0
     added = 0
-    skip_reasons = {"duplicate": 0, "no_format": 0, "no_amount": 0}
+    skip_reasons = {"duplicate": 0, "no_format": 0, "no_amount": 0,
+                    "invalid_date": 0}
     skip_details = []
 
     page_token = None
@@ -274,9 +279,19 @@ def _do_scan(batch: bool, trigger: str = "auto") -> dict:
             description = content if content else (card_name or matched_format.company_name)
 
             try:
-                tx_date = datetime.strptime(date_str[:16], "%a, %d %b %Y").date()
-            except Exception:
-                tx_date = datetime.utcnow().date()
+                # メールに記載された地域での日付を維持する。
+                tx_date = parsedate_to_datetime(date_str).date()
+            except (TypeError, ValueError, OverflowError) as exc:
+                skip_reasons["invalid_date"] += 1
+                skip_details.append({
+                    "reason": "invalid_date",
+                    "sender": sender, "subject": subject, "date_str": date_str,
+                    "body": body, "extra_info": str(exc)[:300],
+                })
+                current_app.logger.warning(
+                    "Gmailメールの日付解析に失敗したためスキップしました: %s", external_id,
+                )
+                continue
 
             tx = Transaction(
                 date=tx_date,
@@ -302,11 +317,14 @@ def _do_scan(batch: bool, trigger: str = "auto") -> dict:
     detail_str = (
         f"重複:{skip_reasons['duplicate']} / "
         f"フォーマット不一致:{skip_reasons['no_format']} / "
-        f"金額未取得:{skip_reasons['no_amount']}"
+        f"金額未取得:{skip_reasons['no_amount']} / "
+        f"日付解析失敗:{skip_reasons['invalid_date']}"
     )
     log = ScanLog(
         source="gmail",
         trigger=trigger,
+        # 正常終了したスキャンの開始時刻を、次回検索の基準として保存する。
+        scanned_at=scan_started_at.replace(tzinfo=None),
         total_found=total_found,
         added=added,
         skipped=skipped,

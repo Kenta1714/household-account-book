@@ -591,15 +591,16 @@ document.getElementById('skipDetailModal').addEventListener('show.bs.modal', asy
     duplicate:  'bg-secondary',
     no_format:  'bg-warning text-dark',
     no_amount:  'bg-danger',
+    invalid_date: 'bg-danger',
   };
 
   body.innerHTML = filtered.map((d, i) => `
     <div class="border rounded mb-3 overflow-hidden">
       <div class="d-flex justify-content-between align-items-center px-3 py-2 bg-light">
         <div>
-          <span class="badge ${reasonBadge[d.reason] || 'bg-secondary'} me-2">${d.reason_label}</span>
+          <span class="badge ${reasonBadge[d.reason] || 'bg-secondary'} me-2">${escHtml(d.reason_label)}</span>
           <strong class="small">${escHtml(d.subject) || '（件名なし）'}</strong>
-          ${d.extra_info ? `<span class="text-muted small ms-2">対象フォーマット: ${escHtml(d.extra_info)}</span>` : ''}
+          ${d.extra_info ? `<span class="text-muted small ms-2">${d.reason === 'invalid_date' ? '補足' : '対象フォーマット'}: ${escHtml(d.extra_info)}</span>` : ''}
         </div>
         <button class="btn btn-link btn-sm py-0 text-muted" data-bs-toggle="collapse"
                 data-bs-target="#skipBody${i}">本文 ▾</button>

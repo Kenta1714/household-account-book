@@ -166,6 +166,7 @@ def scan_skip_details():
         "duplicate": "重複（インポート済み）",
         "no_format": "送信元フォーマット未登録",
         "no_amount": "金額抽出失敗",
+        "invalid_date": "日付解析失敗",
     }
     return jsonify([{
         "reason": d.reason,

@@ -6,7 +6,7 @@ class ScanSkipDetail(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     scan_log_id = db.Column(db.Integer, db.ForeignKey("scan_logs.id"), nullable=False)
-    reason = db.Column(db.String(20), nullable=False)  # duplicate / no_format / no_amount
+    reason = db.Column(db.String(20), nullable=False)  # duplicate / no_format / no_amount / invalid_date
     sender = db.Column(db.String(300))
     subject = db.Column(db.String(500))
     date_str = db.Column(db.String(100))
