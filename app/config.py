@@ -24,6 +24,9 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     SCHEDULER_ENABLED = True
+    BASIC_AUTH_MAX_FAILURES = 5
+    BASIC_AUTH_WINDOW_SECONDS = 300
+    BASIC_AUTH_LOCKOUT_SECONDS = 300
 
 
 class DevelopmentConfig(Config):
@@ -71,6 +74,16 @@ def configure_app(app):
         raise ConfigError(f"設定エラー（{mode}）: {', '.join(missing)} が未設定または空です。")
 
     errors = []
+    if len(app.config["APP_PASSWORD"]) < 15:
+        errors.append("APP_PASSWORD は15文字以上のランダムで使い回さない値にしてください")
+    for key in ("BASIC_AUTH_MAX_FAILURES", "BASIC_AUTH_WINDOW_SECONDS", "BASIC_AUTH_LOCKOUT_SECONDS"):
+        try:
+            value = int(os.environ.get(key, app.config[key]))
+            if value <= 0:
+                raise ValueError
+            app.config[key] = value
+        except ValueError:
+            errors.append(f"{key} は1以上の整数を指定してください")
     secret = app.config["SECRET_KEY"]
     if len(secret) < 32 or secret in {
         "change-me-to-random-string", "dev-secret-key", "dev-secret-key-change-in-production"

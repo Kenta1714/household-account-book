@@ -1,16 +1,20 @@
-import hmac
 import click
 from flask import Flask, request, Response, jsonify, render_template
 from flask_wtf.csrf import CSRFError
 from app.config import configure_app
 from app.extensions import csrf, db, scheduler
+from app.services.basic_auth import BasicAuthGuard
 from werkzeug.serving import is_running_from_reloader
 
 
 def _apply_basic_auth(app):
     """起動時に検証済みの認証情報を両環境で必須にする。"""
-    username = app.config["APP_USERNAME"]
-    password = app.config["APP_PASSWORD"]
+    guard = BasicAuthGuard(
+        app.config["APP_USERNAME"], app.config["APP_PASSWORD"],
+        max_failures=app.config["BASIC_AUTH_MAX_FAILURES"],
+        window_seconds=app.config["BASIC_AUTH_WINDOW_SECONDS"],
+        lockout_seconds=app.config["BASIC_AUTH_LOCKOUT_SECONDS"],
+    )
 
     @app.before_request
     def require_auth():
@@ -18,14 +22,20 @@ def _apply_basic_auth(app):
                 request.path.startswith("/static/apple-touch-icon") or \
                 request.path.startswith("/static/icon-"):
             return  # スリープ対策・アイコン類は認証不要
-        auth = request.authorization
-        valid_username = hmac.compare_digest((auth.username or "").encode(), username.encode()) if auth else False
-        valid_password = hmac.compare_digest((auth.password or "").encode(), password.encode()) if auth else False
-        if not valid_username or not valid_password:
+        authenticated, retry_after = guard.authenticate(
+            request.authorization, attempted="Authorization" in request.headers,
+        )
+        if retry_after is not None:
+            return Response(
+                "認証の試行回数が上限に達しました。時間をおいて再試行してください。",
+                429,
+                {"Retry-After": str(retry_after), "Cache-Control": "no-store"},
+            )
+        if not authenticated:
             return Response(
                 "このアプリへのアクセスには認証が必要です",
                 401,
-                {"WWW-Authenticate": 'Basic realm="kakeibo"'},
+                {"WWW-Authenticate": 'Basic realm="kakeibo"', "Cache-Control": "no-store"},
             )
 
 

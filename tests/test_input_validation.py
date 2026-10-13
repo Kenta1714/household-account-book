@@ -38,7 +38,7 @@ class InputValidationTests(unittest.TestCase):
             "APP_ENV": "development",
             "FLASK_SECRET_KEY": "test-only-secret-key-with-at-least-32-characters",
             "APP_USERNAME": "test-user",
-            "APP_PASSWORD": "test-password",
+            "APP_PASSWORD": "test-only-long-password",
             "DATABASE_URL": "sqlite:///" + str(root / "household.db"),
             "GMAIL_REDIRECT_URI": "http://localhost:8080/gmail/oauth/callback",
             "CREDENTIALS_FILE": str(credentials),
@@ -54,7 +54,7 @@ class InputValidationTests(unittest.TestCase):
         seed_categories(self.app)
         self.client = self.app.test_client()
         self.headers = {
-            "Authorization": "Basic " + base64.b64encode(b"test-user:test-password").decode()
+            "Authorization": "Basic " + base64.b64encode(b"test-user:test-only-long-password").decode()
         }
         self.addCleanup(self._dispose_app)
         # 入力検証テストも実際の画面から取得したCSRFトークンで送信する。

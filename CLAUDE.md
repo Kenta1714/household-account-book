@@ -66,6 +66,7 @@ APP_ENV=development uv run flask --app app:create_app seed-categories
 
 ## セキュリティ指針（最優先）
 
+- Basic認証のパスワードは15文字以上のランダムな専用値を使い、認証失敗のレート制限を維持する。制限状態はプロセス内管理のためworker・インスタンス数は1とする
 - ユーザー入力はHTMLテンプレート内でJinja2の自動エスケープに任せる（`{{ }}`）
 - JSでHTMLを動的生成する場合は必ず `escHtml()` 関数でエスケープする（XSS防止）
 - SQLインジェクション防止のためSQLAlchemy ORMを使い、生SQLは避ける

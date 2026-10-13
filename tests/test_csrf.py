@@ -42,7 +42,7 @@ class CsrfTests(IsolatedEnvironment):
         self.app = self.make_app()
         self.client = self.app.test_client()
         self.headers = {
-            "Authorization": "Basic " + base64.b64encode(b"test-user:test-password").decode()
+            "Authorization": "Basic " + base64.b64encode(b"test-user:test-only-long-password").decode()
         }
         with self.app.app_context():
             category = Category.query.filter_by(type="expense").first()

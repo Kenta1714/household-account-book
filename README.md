@@ -14,7 +14,7 @@ Flask製の家計簿アプリ。開発・本番は `APP_ENV` で明示的に切�
 | --- | --- |
 | `FLASK_SECRET_KEY` | `openssl rand -hex 32` で生成したランダム値。32文字以上。Renderと別の値 |
 | `APP_USERNAME` | Basic認証のユーザー名 |
-| `APP_PASSWORD` | Basic認証のパスワード |
+| `APP_PASSWORD` | 15文字以上。`openssl rand -hex 32` で生成した、このアプリ専用のランダム値を推奨 |
 | `DATABASE_URL` | 既存データを利用する場合は**現在の接続先を維持**。既定のローカルDBは `sqlite:///household.db` |
 | `GMAIL_REDIRECT_URI` | `http://localhost:8080/gmail/oauth/callback` |
 | `CREDENTIALS_FILE` | `credentials.json` など。相対パスはプロジェクトルートから解決 |
@@ -41,7 +41,7 @@ Google Cloud側にも同じリダイレクトURIを登録してください。
 | --- | --- |
 | `APP_ENV` | `production` |
 | `FLASK_SECRET_KEY` | 既存の本番用ランダム値。32文字以上 |
-| `APP_USERNAME` / `APP_PASSWORD` | 既存のBasic認証情報 |
+| `APP_USERNAME` / `APP_PASSWORD` | Basic認証情報。パスワードは15文字以上のランダムな専用値（開発環境・他サービスと使い回さない） |
 | `DATABASE_URL` | **既存の本番PostgreSQLへの接続URL**。`postgres://` 形式も対応 |
 | `GMAIL_REDIRECT_URI` | `https://対象サービスのホスト名/gmail/oauth/callback` |
 | `GOOGLE_CREDENTIALS_JSON` | 既存Google OAuthクライアントのJSON全体 |
@@ -71,7 +71,7 @@ Start Command（既存設定を維持できます）:
 uv run gunicorn run:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
 ```
 
-スケジューラとスキャン進捗はプロセス内で管理しているため、worker数・サービスのインスタンス数は1にしてください。
+スケジューラ・スキャン進捗・認証失敗のレート制限はプロセス内で管理しているため、worker数・サービスのインスタンス数は1にしてください。
 開発リローダーの親プロセスやFlask CLIの保守コマンドではスケジューラを起動しません。
 本番の起動・保守コマンドにFlask CLIを使う場合は、CLI自体のdotenv読込を防ぐため `FLASK_SKIP_DOTENV=1` も指定します。
 
@@ -122,6 +122,41 @@ HTMLフォームには `csrf_token` の隠し入力を、JavaScriptのJSON送信
 JSON送信や `Accept: application/json` を指定したリクエストにはJSONでエラーを返します。
 画面を再読み込みしてから操作をやり直してください。
 OAuthの `state` 検証は引き続き認証コールバック専用に行います。
+
+## Basic認証の総当たり対策
+
+[OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)に沿って、
+`APP_PASSWORD` が15文字未満なら開発・本番ともDB初期化前に起動を拒否します。
+既存パスワードが短い場合は、**デプロイ・再起動前に**長いランダムな値へ更新してください。
+パスワードマネージャーや次のコマンドで生成した64文字の値を使用し、他のサービス・開発環境との使い回しを避けてください。
+ランダム性や使い回しの有無はアプリ側では判定できないため、設定時に確認してください。
+
+```bash
+openssl rand -hex 32
+```
+
+生成値はローカルの `APP_PASSWORD` またはRenderのEnvironmentへ設定し、Gitに保存しないでください。
+本番のアクセスにはHTTPSを使用してください。
+
+認証情報を送信したリクエストが5分間に5回失敗すると、5回目から5分間、保護対象の全URLでHTTP 429を返します。
+`Retry-After` ヘッダーは再試行までの残り秒数です。制限中のリクエストで制限時間を延長しません。
+失敗履歴はこのアプリの単一アカウント全体で共有し、送信元IP・入力ユーザー名・URLの変更では回避できません。
+正常なBasic認証リクエストは失敗回数を増やさず、他の失敗履歴も消しません。
+初回アクセスの認証ヘッダー未送信は通常のHTTP 401チャレンジとして扱い、失敗回数には含めません。
+不正なAuthorizationヘッダーは失敗として数えます。
+`/ping` と既存の公開アイコンURLは制限中も利用できます。
+
+任意の環境変数で調整できます。すべて1以上の整数が必須で、不正値なら起動を拒否します。
+
+| 変数 | 既定値 | 設定内容 |
+| --- | --- | --- |
+| `BASIC_AUTH_MAX_FAILURES` | `5` | 制限を開始する認証失敗回数 |
+| `BASIC_AUTH_WINDOW_SECONDS` | `300` | 認証失敗を数える期間（秒） |
+| `BASIC_AUTH_LOCKOUT_SECONDS` | `300` | 制限を継続する時間（秒） |
+
+制限中は正しい認証情報でもアクセスできません。時間が経過すると自動解除されます。
+失敗履歴・制限時間はプロセスの再起動でもリセットされます。
+複数worker・複数インスタンスへ変更する場合は、認証の制限状態も共有ストレージへ移す必要があります。
 
 ## テスト
 

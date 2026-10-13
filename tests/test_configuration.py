@@ -49,7 +49,7 @@ class IsolatedEnvironment(unittest.TestCase):
             "APP_ENV": "development",
             "FLASK_SECRET_KEY": "test-only-secret-key-with-at-least-32-characters",
             "APP_USERNAME": "test-user",
-            "APP_PASSWORD": "test-password",
+            "APP_PASSWORD": "test-only-long-password",
             "DATABASE_URL": "sqlite:///" + str(self.root / "household.db"),
             "GMAIL_REDIRECT_URI": "http://localhost:8080/gmail/oauth/callback",
             "CREDENTIALS_FILE": str(credentials),
@@ -65,7 +65,7 @@ class IsolatedEnvironment(unittest.TestCase):
     def production(self):
         os.environ.update({
             "APP_ENV": "production",
-            "DATABASE_URL": "postgres://test-user:test-password@localhost/test-db",
+            "DATABASE_URL": "postgres://test-user:test-only-long-password@localhost/test-db",
             "GMAIL_REDIRECT_URI": "https://test.example/gmail/oauth/callback",
             "GOOGLE_CREDENTIALS_JSON": json.dumps(CLIENT_CONFIG),
         })
@@ -88,6 +88,49 @@ class IsolatedEnvironment(unittest.TestCase):
 
 
 class ConfigurationTests(IsolatedEnvironment):
+    def test_short_password_is_rejected_before_database_initialization(self):
+        for mode in ("development", "production"):
+            if mode == "production":
+                self.production()
+            with self.subTest(mode=mode), patch.dict(os.environ, {"APP_PASSWORD": "short-secret"}):
+                with patch("app.db.init_app") as init_db, self.assertRaises(ConfigError) as error:
+                    create_app()
+                self.assertIn("APP_PASSWORD", str(error.exception))
+                self.assertNotIn("short-secret", str(error.exception))
+                init_db.assert_not_called()
+
+    def test_password_supports_unicode_and_long_values_without_truncation(self):
+        for password in ("長いパスワードをそのまま使用する", "x" * 128):
+            with self.subTest(password=password), patch.dict(os.environ, {"APP_PASSWORD": password}):
+                app = Flask(__name__)
+                configure_app(app)
+                self.assertEqual(app.config["APP_PASSWORD"], password)
+
+    def test_auth_rate_limit_defaults_and_overrides(self):
+        app = Flask(__name__)
+        configure_app(app)
+        defaults = {
+            "BASIC_AUTH_MAX_FAILURES": 5,
+            "BASIC_AUTH_WINDOW_SECONDS": 300,
+            "BASIC_AUTH_LOCKOUT_SECONDS": 300,
+        }
+        for key, default in defaults.items():
+            self.assertEqual(app.config[key], default)
+        with patch.dict(os.environ, {key: "7" for key in defaults}):
+            configure_app(app)
+            for key in defaults:
+                self.assertEqual(app.config[key], 7)
+
+    def test_invalid_auth_rate_limit_settings_are_sanitized(self):
+        for key in ("BASIC_AUTH_MAX_FAILURES", "BASIC_AUTH_WINDOW_SECONDS", "BASIC_AUTH_LOCKOUT_SECONDS"):
+            for value in ("0", "-1", "1.5", "", "invalid-secret"):
+                with self.subTest(key=key, value=value), patch.dict(os.environ, {key: value}):
+                    with patch("app.db.init_app") as init_db, self.assertRaises(ConfigError) as error:
+                        create_app()
+                    self.assertIn(key, str(error.exception))
+                    self.assertNotIn("invalid-secret", str(error.exception))
+                    init_db.assert_not_called()
+
     def test_missing_environment_fails_before_database_initialization(self):
         os.environ.pop("APP_ENV")
         with patch("app.db.init_app") as init_db, self.assertRaises(ConfigError):
@@ -193,7 +236,7 @@ class ApplicationTests(IsolatedEnvironment):
         super().setUp()
         self.app = self.make_app()
         self.client = self.app.test_client()
-        self.headers = {"Authorization": "Basic " + base64.b64encode(b"test-user:test-password").decode()}
+        self.headers = {"Authorization": "Basic " + base64.b64encode(b"test-user:test-only-long-password").decode()}
 
     def store_token(self):
         db.session.add(Setting(key="gmail_token", value=TOKEN))
