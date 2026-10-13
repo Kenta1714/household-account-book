@@ -13,11 +13,13 @@ from googleapiclient.discovery import build
 from flask import current_app
 
 from app.extensions import db
+from app.logging_utils import log_safe_exception
 from app.models import Transaction, EmailFormat, ScanLog, ScanSkipDetail, Setting
 from app.services.email_parser import extract_amount, extract_content, extract_card_name
 
 _GMAIL_TOKEN_KEY = "gmail_token"
 _SCAN_OVERLAP = timedelta(minutes=5)
+SCAN_ERROR_MESSAGE = "Gmailスキャンに失敗しました。時間をおいて再度お試しください。"
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
@@ -160,14 +162,22 @@ def scan_emails(
 
     try:
         threading.Thread(
-            target=_run_scan,
+            target=_run_background_scan,
             kwargs={"batch": batch, "trigger": trigger, "app": app},
             daemon=True,
         ).start()
-    except Exception as exc:
-        _update_progress(running=False, done=True, error=str(exc))
+    except Exception:
+        _update_progress(running=False, done=True, error=SCAN_ERROR_MESSAGE)
         raise
     return {"started": True}
+
+
+def _run_background_scan(batch: bool, trigger: str, *, app):
+    # スレッドの未処理例外はstderrへ詳細を出すため、ここで安全に記録する。
+    try:
+        _run_scan(batch, trigger, app=app)
+    except Exception as exc:
+        log_safe_exception(app.logger, "Gmailスキャンに失敗しました", exc)
 
 
 def _run_scan(batch: bool, trigger: str, *, app=None) -> dict:
@@ -178,8 +188,8 @@ def _run_scan(batch: bool, trigger: str, *, app=None) -> dict:
         _update_progress(running=False, done=True, result=result,
                          total_found=result["total_found"], added=result["added"])
         return result
-    except BaseException as exc:
-        _update_progress(running=False, done=True, error=str(exc))
+    except BaseException:
+        _update_progress(running=False, done=True, error=SCAN_ERROR_MESSAGE)
         raise
 
 
@@ -289,12 +299,12 @@ def _import_emails(batch: bool, trigger: str) -> dict:
             try:
                 # メールに記載された地域での日付を維持する。
                 tx_date = parsedate_to_datetime(date_str).date()
-            except (TypeError, ValueError, OverflowError) as exc:
+            except (TypeError, ValueError, OverflowError):
                 skip_reasons["invalid_date"] += 1
                 skip_details.append({
                     "reason": "invalid_date",
                     "sender": sender, "subject": subject, "date_str": date_str,
-                    "body": body, "extra_info": str(exc)[:300],
+                    "body": body, "extra_info": "メールの日付を解析できませんでした。",
                 })
                 current_app.logger.warning(
                     "Gmailメールの日付解析に失敗したためスキップしました: %s", external_id,

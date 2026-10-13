@@ -3,6 +3,7 @@ from flask import Flask, request, Response, jsonify, render_template
 from flask_wtf.csrf import CSRFError
 from app.config import configure_app
 from app.extensions import csrf, db, scheduler
+from app.logging_utils import configure_logging, log_safe_exception
 from app.services.basic_auth import BasicAuthGuard
 from werkzeug.serving import is_running_from_reloader
 
@@ -44,6 +45,7 @@ def create_app(test_config=None):
     configure_app(app)
     if test_config is not None:
         app.config.update(test_config)
+    configure_logging(app)
     _apply_basic_auth(app)
     csrf.init_app(app)
 
@@ -91,8 +93,12 @@ def create_app(test_config=None):
 
         def scheduled_gmail_scan():
             with app.app_context():
-                if gs.is_authenticated():
-                    gs.scan_emails(batch=False, trigger="auto")
+                try:
+                    if gs.is_authenticated():
+                        gs.scan_emails(batch=False, trigger="auto")
+                except Exception as exc:
+                    # APSchedulerへ生の例外を渡すとtracebackに秘密情報が出る。
+                    log_safe_exception(app.logger, "Gmail定期スキャンに失敗しました", exc)
 
         with app.app_context():
             from app.models import Setting

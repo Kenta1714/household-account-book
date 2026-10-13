@@ -4,12 +4,22 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from flask import Flask, current_app
+from sqlalchemy.exc import StatementError
 
 from app.routes.gmail import bp
 from app.services import gmail_service as gs
 
 
 RESULT = {"total_found": 3, "added": 2, "skipped": 1}
+SECRETS = ("private-access-token", "private-refresh-token", "private-client-secret",
+           "非公開のメール本文")
+
+
+def sensitive_error():
+    return StatementError(
+        "database failed", "INSERT INTO setting (value) VALUES (?)", SECRETS,
+        RuntimeError(" ".join(SECRETS)),
+    )
 
 
 class GmailScanTests(unittest.TestCase):
@@ -39,7 +49,7 @@ class GmailScanTests(unittest.TestCase):
         progress = gs.get_scan_progress()
         self.assertFalse(progress["running"])
         self.assertTrue(progress["done"])
-        self.assertEqual(progress["error"], "scan failed")
+        self.assertEqual(progress["error"], gs.SCAN_ERROR_MESSAGE)
         with patch.object(gs, "_do_scan", return_value=RESULT):
             self.assertEqual(gs.scan_emails(), RESULT)
         self.assertIsNone(gs.get_scan_progress()["error"])
@@ -75,11 +85,17 @@ class GmailScanTests(unittest.TestCase):
             with self.app.app_context():
                 gs.scan_emails(trigger="manual", background=True)
             kwargs = thread.call_args.kwargs
-        with patch.object(gs, "_do_scan", side_effect=RuntimeError("background failed")):
-            with self.assertRaisesRegex(RuntimeError, "background failed"):
-                kwargs["target"](**kwargs["kwargs"])
+        with patch.object(gs, "_do_scan", side_effect=sensitive_error()), \
+                self.assertLogs(self.app.logger, level="ERROR") as logs:
+            kwargs["target"](**kwargs["kwargs"])
         self.assertFalse(gs.get_scan_progress()["running"])
-        self.assertEqual(gs.get_scan_progress()["error"], "background failed")
+        progress = self.app.test_client().get("/gmail/scan/progress")
+        self.assertEqual(progress.json["error"], gs.SCAN_ERROR_MESSAGE)
+        output = str(progress.json) + "\n".join(logs.output)
+        for secret in (*SECRETS, "INSERT INTO", "Traceback"):
+            self.assertNotIn(secret, output)
+        self.assertIn("StatementError", "\n".join(logs.output))
+        self.assertFalse(logs.records[0].exc_info)
         with patch.object(gs, "_do_scan", return_value=RESULT):
             self.assertEqual(gs.scan_emails(), RESULT)
 
@@ -93,7 +109,7 @@ class GmailScanTests(unittest.TestCase):
                 with self.app.app_context(), self.assertRaisesRegex(RuntimeError, "thread failed"):
                     gs.scan_emails(background=True)
             self.assertFalse(gs.get_scan_progress()["running"])
-            self.assertEqual(gs.get_scan_progress()["error"], "thread failed")
+            self.assertEqual(gs.get_scan_progress()["error"], gs.SCAN_ERROR_MESSAGE)
             with patch.object(gs, "_do_scan", return_value=RESULT):
                 self.assertEqual(gs.scan_emails(), RESULT)
 
@@ -185,14 +201,42 @@ class GmailScanTests(unittest.TestCase):
     def test_manual_thread_start_failure_returns_json_and_allows_retry(self):
         client = self.app.test_client()
         with patch.object(gs.threading, "Thread") as thread:
-            thread.return_value.start.side_effect = RuntimeError("thread failed")
-            with self.assertLogs(self.app.logger, level="ERROR"):
+            thread.return_value.start.side_effect = sensitive_error()
+            with self.assertLogs(self.app.logger, level="ERROR") as logs:
                 response = client.post("/gmail/scan")
         self.assertEqual(response.status_code, 500)
         self.assertIn("スキャンを開始できませんでした", response.get_json()["error"])
         self.assertFalse(gs.get_scan_progress()["running"])
+        progress = client.get("/gmail/scan/progress")
+        self.assertEqual(progress.json["error"], gs.SCAN_ERROR_MESSAGE)
+        output = str(response.json) + str(progress.json) + "\n".join(logs.output)
+        for secret in (*SECRETS, "INSERT INTO", "Traceback"):
+            self.assertNotIn(secret, output)
+        self.assertFalse(logs.records[0].exc_info)
         with patch.object(gs, "_do_scan", return_value=RESULT):
             self.assertEqual(gs.scan_emails(), RESULT)
+
+    def test_real_background_thread_does_not_pass_failure_to_excepthook(self):
+        threads = []
+        thread_type = threading.Thread
+
+        def make_thread(**kwargs):
+            thread = thread_type(**kwargs)
+            threads.append(thread)
+            return thread
+
+        with patch.object(gs.threading, "Thread", side_effect=make_thread), \
+                patch.object(gs, "_do_scan", side_effect=sensitive_error()), \
+                patch.object(threading, "excepthook") as hook, \
+                self.assertLogs(self.app.logger, level="ERROR") as logs:
+            response = self.app.test_client().post("/gmail/scan")
+            self.assertEqual(response.status_code, 200)
+            threads[0].join(timeout=5)
+            self.assertFalse(threads[0].is_alive())
+        hook.assert_not_called()
+        self.assertEqual(gs.get_scan_progress()["error"], gs.SCAN_ERROR_MESSAGE)
+        for secret in (*SECRETS, "INSERT INTO", "Traceback"):
+            self.assertNotIn(secret, "\n".join(logs.output))
 
 
 if __name__ == "__main__":

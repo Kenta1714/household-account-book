@@ -4,6 +4,7 @@ import base64
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app, abort
 from app.extensions import db
+from app.logging_utils import log_safe_exception
 from app.models import EmailFormat, Category, ScanLog, ScanSkipDetail
 from app.services import gmail_service
 from app.services.email_parser import preview_extraction
@@ -112,8 +113,8 @@ def scan():
     batch = request.form.get("batch") == "1"
     try:
         result = gmail_service.scan_emails(batch=batch, trigger="manual", background=True)
-    except Exception:
-        current_app.logger.exception("Gmailスキャンの開始に失敗しました")
+    except Exception as exc:
+        log_safe_exception(current_app.logger, "Gmailスキャンの開始に失敗しました", exc)
         return jsonify({"error": "スキャンを開始できませんでした。もう一度お試しください。"}), 500
     if result is None:
         return jsonify({"error": "スキャン中です"}), 409

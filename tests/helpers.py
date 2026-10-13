@@ -4,6 +4,7 @@ from alembic import command
 from alembic.config import Config
 
 from app.extensions import db
+from app.logging_utils import configure_logging
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -16,6 +17,10 @@ def migrate_database(app):
         with db.engine.begin() as connection:
             alembic_config.attributes["connection"] = connection
             command.upgrade(alembic_config, "head")
+    # テストではアプリ生成後にAlembicがhandlerを置換し既存loggerを無効化する。
+    # 本番と同様、マイグレーション後のアプリ用ログ設定に戻す。
+    app.logger.disabled = False
+    configure_logging(app)
 
 
 def check_database_schema(app):

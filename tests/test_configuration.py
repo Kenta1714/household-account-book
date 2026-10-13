@@ -13,7 +13,7 @@ from flask.cli import FlaskGroup
 from click.testing import CliRunner
 from google.auth.exceptions import RefreshError, TransportError
 from sqlalchemy import inspect
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app import create_app
 from app.config import ConfigError, configure_app
@@ -88,6 +88,16 @@ class IsolatedEnvironment(unittest.TestCase):
 
 
 class ConfigurationTests(IsolatedEnvironment):
+    def test_both_environments_hide_sql_parameters_and_disable_echo(self):
+        for mode in ("development", "production"):
+            if mode == "production":
+                self.production()
+            with self.subTest(mode=mode):
+                app = Flask(__name__)
+                configure_app(app)
+                self.assertTrue(app.config["SQLALCHEMY_ENGINE_OPTIONS"]["hide_parameters"])
+                self.assertFalse(app.config["SQLALCHEMY_ECHO"])
+
     def test_short_password_is_rejected_before_database_initialization(self):
         for mode in ("development", "production"):
             if mode == "production":
@@ -241,6 +251,24 @@ class ApplicationTests(IsolatedEnvironment):
     def store_token(self):
         db.session.add(Setting(key="gmail_token", value=TOKEN))
         db.session.commit()
+
+    def test_database_error_does_not_format_saved_token_or_mail_body(self):
+        with self.app.app_context():
+            self.assertTrue(db.engine.hide_parameters)
+            self.assertFalse(db.engine.echo)
+            db.session.add_all([
+                Setting(key="duplicate-test-key", value="private-refresh-token"),
+                Setting(key="duplicate-test-key", value="private-email-body"),
+            ])
+            try:
+                with self.assertRaises(IntegrityError) as error:
+                    db.session.commit()
+                message = str(error.exception)
+                self.assertNotIn("private-refresh-token", message)
+                self.assertNotIn("private-email-body", message)
+                self.assertIn("parameters hidden", message)
+            finally:
+                db.session.rollback()
 
     def test_create_app_does_not_create_or_migrate_tables(self):
         separate_database = self.root / "startup-only.db"
@@ -506,6 +534,33 @@ class ApplicationTests(IsolatedEnvironment):
 
 
 class SchedulerTests(IsolatedEnvironment):
+    def test_scheduled_failures_do_not_escape_to_scheduler_logs(self):
+        self.make_app()
+        with patch("app.scheduler") as scheduler:
+            scheduler.running = False
+            app = self.make_app(SCHEDULER_ENABLED=True)
+        app.logger.disabled = False
+        scheduled_scan = scheduler.add_job.call_args.args[0]
+        for stage in ("authentication", "scan"):
+            with self.subTest(stage=stage), \
+                    patch.dict(gmail_service._scan_progress, {"running": False}), \
+                    patch.object(gmail_service, "is_authenticated", return_value=True) as auth, \
+                    patch.object(gmail_service, "_do_scan") as scan, \
+                    self.assertLogs(app.logger, level="ERROR") as logs:
+                failure = RuntimeError("private-token private-mail-body SQL parameters")
+                if stage == "authentication":
+                    auth.side_effect = failure
+                else:
+                    scan.side_effect = failure
+                scheduled_scan()
+            output = "\n".join(logs.output)
+            self.assertIn("Gmail定期スキャンに失敗しました", output)
+            self.assertIn("RuntimeError", output)
+            self.assertNotIn("private-token", output)
+            self.assertNotIn("private-mail-body", output)
+            self.assertNotIn("SQL parameters", output)
+            self.assertFalse(logs.records[0].exc_info)
+
     def test_scheduled_scan_skips_when_another_scan_is_running(self):
         self.make_app()
         with patch("app.scheduler") as scheduler:
