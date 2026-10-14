@@ -25,3 +25,6 @@ pkce_verifier.txt
 
 # macOS
 .DS_Store
+
+#docs
+docs/
